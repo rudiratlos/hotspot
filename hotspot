@@ -1,0 +1,391 @@
+#!/bin/bash
+# V0.1
+# set -e execute script on error immediately # -x debug mode
+set +e
+#set -x
+
+opt1="$1"
+opt2="$2"
+eth_dev="eth0"
+wlan_dev="wlan0"
+ap_dev="ap0"
+ap_ip="10.3.141.1"
+ap_net="10.3.141"
+ap_ipanet="10.3.141.1/24"
+ap_subn="10.3.141.0/24"
+ap_revip="1.141.3.10"
+ap_revnet="141.3.10"
+ns_dom="local"
+wpactrl="/var/run/wpa_supplicant"
+wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
+wpasupif="/etc/wpa_supplicant/wpa_supplicant-wlan0.conf"
+hostn="`hostname`"
+# spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
+spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wlan_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
+spot_psk="hallohallo"
+spot_cntry2="DE"
+
+function Hotspot_Defines {
+  eth_subn=`ip addr show dev "$eth_dev" 2>/dev/null   | awk '/inet / { print $4 }'`
+  wlan_subn=`ip addr show dev "$wlan_dev" 2>/dev/null | awk '/inet / { print $4 }'`
+  if [ "$eth_subn" == "$wlan_subn" ] && [ "$eth_subn" != "" ]; then same_subn="yes"; else same_subn="no"; fi
+}
+
+function Show_Defines {
+  echo `date +"%Y-%m-%d %T"` "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
+  echo `date +"%Y-%m-%d %T"` "wlan_dev:$wlan_dev wlan_subn:$wlan_subn wlan_ip:$wlan_ip"
+  echo `date +"%Y-%m-%d %T"` "same_subn:$same_subn"
+}
+
+function Hotspot_Status {
+# echo `date +"%Y-%m-%d %T"` "Status Hotspot ..."
+  ps ax | grep wpa_ ; ip a ; hostname -I
+}
+
+function Hotspot_AutoStart {
+  if [ "$1" == "enable" ] || [ "$1" == "disable" ]; then
+    echo "  Autostart hotspot $1"
+    if [ "$1" == "enable" ]; then
+      touch /etc/default/hostapd_autostart
+    else
+      rm /etc/default/hostapd_autostart
+    fi
+  else
+    echo "  Autostart invalid option $1"
+  fi
+}
+
+function iptables {
+  if [ "$1" == "add" ] || [ "$1" == "del" ]; then
+    logger -s "  IPtables $1"
+    if [ "$1" == "add" ]; then opt="-A"; else opt="-D"; fi
+    iptables -t nat $opt POSTROUTING -s $ap_subn ! -d $ap_subn -j MASQUERADE
+    iptables $opt FORWARD -i $eth_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
+    iptables $opt FORWARD -i $ap_dev -o $eth_dev -j ACCEPT
+  else
+    logger -s "  IPtables invalid option $1"
+  fi
+}
+
+function chk_wpa_fil {
+  if [ -f "$wpasupg" ]; then
+    logger -s "  WARNING $wpasupg not for specific interface $wlan_dev"
+    if [ ! -f "$wpasupif" ]; then
+      logger -s "  mv $wpasupg $wpasupif"
+      mv $wpasupg $wpasupif
+    else
+      logger -s "  cp $wpasupg ${wpasupg}X"
+      cp $wpasupg ${wpasupg}_`date +"%Y%m%d%H%M%S"`
+      rm $wpasupg
+    fi
+  fi
+}
+
+function inst_ap_dev {
+  if [ "$wlan_dev" != "$ap_dev" ]; then
+    logger -s "  install and check dev $ap_dev ..."
+    ip=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $2 }'`
+    if [ "$ap_ipanet" != "$ip" ]; then
+      logger -s "  assign  dev $ap_dev $ap_ipanet"
+      iw dev $wlan_dev interface add $ap_dev type __ap
+      ip link set dev "$ap_dev" down
+      ip addr flush dev "$ap_dev"
+      ip a add "$ap_ipanet" brd + dev "$ap_dev"
+      ip link set dev "$ap_dev" up
+    fi
+    logger -s "  install dev $ap_dev done"
+  fi
+}
+
+function wlan {
+  case "$1" in
+        start)
+            chk_wpa_fil
+            logger -s "  start   wlan"
+            wpa_supplicant -B -i $wlan_dev -c $wpasupif >/dev/null 2>&1
+            ;;
+        stop)
+            chk_wpa_fil
+            logger -s "  stop    wlan"
+            wpa_cli -p $wpactrl -i $wlan_dev terminate >/dev/null 2>&1
+            ;;
+        *)
+            echo $"Usage: $0 {wlan start|stop}"
+            exit 1
+  esac
+}
+
+function Mdfy_Chan {
+  if [ "$1" != "" ]; then ch="$1";  else  ch="6"; fi
+  if [ "$ch" -gt "14" ]; then hm="a"; else hm="g"; fi
+  logger -s "  $ap_dev changeing /etc/hostapd/hostapd.conf channel:$2 to $ch hw_mode:$hm"
+  sed -i -r "s/channel[ ]*=.*/channel=$ch/g" /etc/hostapd/hostapd.conf
+  sed -i -r "s/hw_mode[ ]*=.*/hw_mode=$hm/g" /etc/hostapd/hostapd.conf
+}
+
+function Hotspot_Start {
+  Hotspot_Defines
+  logger -s "starting  hotspot ..."
+  chk_wpa_fil
+  if [ "$opt2" != "wlan" ] || [ "$1" == "nowlan" ]; then
+    wlan stop;
+ fi
+  logger "stop   hostapd"
+  systemctl stop hostapd
+  logger "stop   dnsmasq"
+  systemctl stop dnsmasq
+  chanw=`iwlist $wlan_dev channel | awk '/urrent / { print $5 }' | sed 's/)//g'`
+  chanh=`cat /etc/hostapd/hostapd.conf | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
+  if [ "$chanw" != "$chanh" ] && [ "$chanw" != "" ]; then
+    Mdfy_Chan "$chanw" "$chanh"
+  fi
+  echo 1 > /proc/sys/net/ipv4/ip_forward
+  inst_ap_dev
+  sleep 2
+# iptables add
+  logger -s "  start   dnsmasq"
+  systemctl start dnsmasq
+  sleep 2
+  logger -s "  start   hostapd (restart)"
+  systemctl start  hostapd
+  sleep 2
+  systemctl stop   hostapd
+  sleep 5
+  systemctl start  hostapd
+  logger -s "started   hotspot"
+}
+
+function Hotspot_Try {
+  logger -s "trying    hotspot ..."
+  sleep 20     # let wlan settle
+  Hotspot_Defines
+  if [ "$same_subn" == "yes" ]; then
+    logger -s "  on same subnet ($eth_dev $wlan_dev $wlan_subn)"
+    Hotspot_Start nowlan
+  else
+    if [ "$wlan_subn" == "" ]; then
+      logger -s "  $wlan_dev   not connected"
+      Hotspot_Start nowlan
+    else
+      logger -s "  $wlan_dev   already connected"
+    fi
+  fi
+}
+
+function Hotspot_Stop {
+  logger -s "stopping  hotspot ..."
+  chk_wpa_fil
+  logger -s "  stop    hostapd"
+  systemctl stop hostapd
+  sleep 2
+  logger -s "  stop    dnsmasq"
+  systemctl stop dnsmasq
+  echo 0 > /proc/sys/net/ipv4/ip_forward
+  sleep 2
+  if [ "$opt2" != "nowlan" ]; then
+    sleep 2;
+    wlan start;
+    sleep 10;
+  fi
+# iptables del
+  logger -s "stopped   hotspot"
+}
+
+function Hotspot_Setup {
+  echo `date +"%Y-%m-%d %T"` "Setup  Hotspot $1 ..."
+  if [ "$1" != "notemplate" ]; then templ="_template"; else templ=""; fi
+
+  echo `date +"%Y-%m-%d %T"` "install sw packages"
+  apt-get -qy install hostapd dnsmasq
+# disable/stop services. starting by script if needed
+  systemctl disable dnsmasq.service >/dev/null 2>&1
+  systemctl disable hostapd.service >/dev/null 2>&1
+  systemctl stop    dnsmasq.service >/dev/null 2>&1
+  systemctl stop    hostapd.service >/dev/null 2>&1
+
+  fil="/etc/rc.local$templ"
+  echo `date +"%Y-%m-%d %T"` "create $fil"
+  cat <<EOF > "$fil"
+#!/bin/sh -e
+#file autocreated, do not edit (2018-10-27 12:16:40)
+#
+
+if [ -f "/etc/default/hostapd_autostart" ]; then
+  hotspot try >/tmp/hotspot.log 2>&1 &
+fi
+
+# Print the IP address
+_IP=\$(hostname -I) || true
+if [ "\$_IP" ]; then
+  logger -s "My IP address is \$_IP"
+fi
+
+exit 0
+EOF
+  chmod 750 "$fil"
+
+  fil="/etc/dhcpcd.conf$templ"
+  echo `date +"%Y-%m-%d %T"` "create $fil"
+  cat <<EOF > "$fil"
+hostname
+clientid
+persistent
+option rapid_commit
+option domain_name_servers, domain_name, domain_search, host_name
+option classless_static_routes
+option ntp_servers
+option interface_mtu
+require dhcp_server_identifier
+slaac private
+
+timeout 5
+
+denyinterfaces ap0
+interface ap0
+  nohook wpa_supplicant
+EOF
+  chmod 664 "$fil"
+  chown root:netdev "$fil"
+
+  fil="/etc/dnsmasq.conf$templ"
+  echo `date +"%Y-%m-%d %T"` "create $fil"
+  cat <<EOF > "$fil"
+dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
+dhcp-reply-delay=tag:client_is_a_pi,2
+
+# Never forward plain names (without a dot or domain part)
+domain-needed
+no-dhcp-interface=eth0,wlan0
+listen-address=$ap_ip
+listen-address=127.0.0.1
+bind-interfaces
+
+#==========[ NAMESERVER ]==========#
+
+no-hosts # Do not read /etc/hosts
+# Read additional hosts-file (not only /etc/hosts) to add entries into DNS
+#addn-hosts=/etc/dnsmasq_static_hosts.conf
+expand-hosts
+domain=$ns_dom
+local=/$ns_dom/$ap_ip
+
+# Host & PTR & Reverse
+host-record=$hostn.$ns_dom,$ap_ip
+server=/$ap_revnet.in-addr.arpa/$ap_ip
+ptr-record=$ap_revip.in-addr.arpa,$hostn.$ns_dom
+
+#==========[ DHCP ]==========#
+
+dhcp-range=$ap_net.50,$ap_net.199,255.255.255.0,12h
+dhcp-option=option:router,$ap_ip
+#dhcp-option=option:ntp-server,$ap_ip
+
+dhcp-option=vendor:MSFT,2,1i # Tell MS Windows to release a lease on shutdown
+dhcp-option=44,$ap_ip    # set netbios-over-TCP/IP aka WINS
+dhcp-option=45,$ap_ip    # netbios datagram distribution server
+dhcp-option=46,8             # netbios node type
+dhcp-option=252,"\n"         # REQUIRED to get win7 to behave
+
+# DHCPv4 Should be set when dnsmasq is definitely the only DHCP server on a network
+#dhcp-authoritative
+# DHCPv4 Server will attempt to ensure that an address is not in use before allocating it to a host
+#no-ping
+
+#==========[ etc ]==========#
+
+log-facility=/var/log/syslog
+#log-queries
+#log-dhcp
+log-async
+local-ttl=2
+local-service
+localise-queries
+EOF
+  chmod 644 "$fil"
+
+  fil="/etc/default/hostapd$templ"
+  echo `date +"%Y-%m-%d %T"` "create $fil"
+  cat <<EOF > "$fil"
+#RUN_DAEMON=yes
+DAEMON_CONF="/etc/hostapd/hostapd.conf"
+EOF
+  chmod 600 "$fil"
+
+  fil="/etc/hostapd/hostapd.conf$templ"
+  echo `date +"%Y-%m-%d %T"` "create $fil (pls. adjust SSID, PWD and country code)"
+  cat <<EOF > "$fil"
+ctrl_interface=/var/run/hostapd
+ctrl_interface_group=0
+interface=ap0
+driver=nl80211
+
+channel=6
+hw_mode=g
+country_code=$spot_cntry2
+ssid=$spot_ssid
+wpa_passphrase=$spot_psk
+
+wpa=2
+wpa_key_mgmt=WPA-PSK
+wpa_pairwise=TKIP
+rsn_pairwise=CCMP
+
+ieee80211n=1
+ieee80211d=1
+wmm_enabled=0
+macaddr_acl=0
+ignore_broadcast_ssid=0
+auth_algs=1
+
+logger_syslog=-1
+logger_syslog_level=4
+logger_stdout=-1
+logger_stdout_level=4
+EOF
+  chmod 640 "$fil"
+
+  if [ "$1" != "notemplate" ]; then echo `date +"%Y-%m-%d %T"` "rename *_template files for activation"; fi
+}
+
+Hotspot_Defines
+
+case "$opt1" in
+        try)
+            Hotspot_Try   "$opt2"
+            ;;
+        start)
+            Hotspot_Start "$opt2"
+            ;;
+        stop)
+            Hotspot_Stop  "$opt2"
+            ;;
+        wlan)
+            wlan          "$opt2"
+            ;;
+        iap)
+            inst_ap_dev
+            ;;
+        iptables)
+            iptables      "$opt2"
+            ;;
+        setchan)
+            Mdfy_Chan     "$opt2" "given_by_cli"
+            ;;
+        setup)
+            Hotspot_Setup "$opt2"
+            ;;
+        autostart)
+            Hotspot_AutoStart "$opt2"
+            ;;
+        status)
+            Hotspot_Status
+            ;;
+        restart)
+            Hotspot_Stop
+            Hotspot_Start
+            ;;
+        *)
+        printf 'Usage: %s try | start [wlan] | stop [nowlan] | restart | status | iap | setup | autostart [enable|disable] | iptables [add|del] | setchan [channel] | wlan [start|stop]\n' "${0##*/}"
+            exit 1
+esac
+
