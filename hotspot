@@ -1,5 +1,6 @@
 #!/bin/bash
-# V0.1
+#V0.2
+#file autocreated, do not edit
 # set -e execute script on error immediately # -x debug mode
 set +e
 #set -x
@@ -18,10 +19,10 @@ ap_revnet="141.3.10"
 ns_dom="local"
 wpactrl="/var/run/wpa_supplicant"
 wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
-wpasupif="/etc/wpa_supplicant/wpa_supplicant-${wlan_dev}.conf"
+wpasupif="/etc/wpa_supplicant/wpa_supplicant-wlan0.conf"
 hostn="`hostname`"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
-spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/${wlan_dev}/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
+spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wlan_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
 spot_cntry2="DE"
 
@@ -42,28 +43,26 @@ function Hotspot_Status {
   ps ax | grep wpa_ ; ip a ; hostname -I
 }
 
-function Hotspot_AutoStart {
-  if [ "$1" == "enable" ] || [ "$1" == "disable" ]; then
-    echo "  Autostart hotspot $1"
-    if [ "$1" == "enable" ]; then
-      touch /etc/default/hostapd_autostart
-    else
-      rm /etc/default/hostapd_autostart
-    fi
+function Mdfy_Para {
+  if [ "$1" != "" ]; then
+    logger -s "  change   /etc/hostapd/hostapd.conf $1=$2"
+    sed -i -r "s/$1[ ]*=.*/$1=$2/g" "/etc/hostapd/hostapd.conf"
   else
-    echo "  Autostart invalid option $1"
+    echo "  Mdfy_Para invalid option $1"
   fi
 }
 
-function iptables {
-  if [ "$1" == "add" ] || [ "$1" == "del" ]; then
-    logger -s "  IPtables $1"
-    if [ "$1" == "add" ]; then opt="-A"; else opt="-D"; fi
-    iptables -t nat $opt POSTROUTING -s $ap_subn ! -d $ap_subn -j MASQUERADE
-    iptables $opt FORWARD -i $eth_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
-    iptables $opt FORWARD -i $ap_dev -o $eth_dev -j ACCEPT
-  else
-    logger -s "  IPtables invalid option $1"
+function use_iptables {
+  if [ "`grep -c -F "useiptables=1" "/etc/hostapd/hostapd.conf"`" -gt "0" ]; then
+    if [ "$1" == "add" ] || [ "$1" == "del" ]; then
+      logger -s "  IPtables $1"
+      if [ "$1" == "add" ]; then opt="-A"; else opt="-D"; fi
+      iptables -t nat $opt POSTROUTING -s $ap_subn ! -d $ap_subn -j MASQUERADE
+      iptables $opt FORWARD -i $eth_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
+      iptables $opt FORWARD -i $ap_dev -o $eth_dev -j ACCEPT
+    else
+      logger -s "  IPtables invalid option $1"
+    fi
   fi
 }
 
@@ -74,7 +73,7 @@ function chk_wpa_fil {
       logger -s "  mv $wpasupg $wpasupif"
       mv $wpasupg $wpasupif
     else
-      logger -s "  cp $wpasupg ${wpasupg}X"
+      logger -s "  cp $wpasupg ${wpasupg}_YYYYMMDDhhmmss"
       cp $wpasupg ${wpasupg}_`date +"%Y%m%d%H%M%S"`
       rm $wpasupg
     fi
@@ -118,9 +117,8 @@ function wlan {
 function Mdfy_Chan {
   if [ "$1" != "" ]; then ch="$1";  else  ch="6"; fi
   if [ "$ch" -gt "14" ]; then hm="a"; else hm="g"; fi
-  logger -s "  $ap_dev changeing /etc/hostapd/hostapd.conf channel:$2 to $ch hw_mode:$hm"
-  sed -i -r "s/channel[ ]*=.*/channel=$ch/g" /etc/hostapd/hostapd.conf
-  sed -i -r "s/hw_mode[ ]*=.*/hw_mode=$hm/g" /etc/hostapd/hostapd.conf
+  Mdfy_Para "channel" "$ch"
+  Mdfy_Para "hw_mode" "$hm"
 }
 
 function Hotspot_Start {
@@ -142,7 +140,7 @@ function Hotspot_Start {
   echo 1 > /proc/sys/net/ipv4/ip_forward
   inst_ap_dev
   sleep 2
-# iptables add
+  use_iptables add
   logger -s "  start   dnsmasq"
   systemctl start dnsmasq
   sleep 2
@@ -187,7 +185,7 @@ function Hotspot_Stop {
     wlan start;
     sleep 10;
   fi
-# iptables del
+  use_iptables del
   logger -s "stopped   hotspot"
 }
 
@@ -207,10 +205,10 @@ function Hotspot_Setup {
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
 #!/bin/sh -e
-#file autocreated, do not edit (2018-10-27 12:16:40)
+#file autocreated, do not edit
 #
 
-if [ -f "/etc/default/hostapd_autostart" ]; then
+if [ "\`grep -c -F "autostart=1" "/etc/hostapd/hostapd.conf"\`" -gt "0" ]; then
   hotspot try >/tmp/hotspot.log 2>&1 &
 fi
 
@@ -223,6 +221,12 @@ fi
 exit 0
 EOF
   chmod 750 "$fil"
+
+  fil="/etc/sysctl.conf"
+# net.ipv4.ip_forward=1
+  grep -q -F "net.ipv4.ip_forward=" $fil || echo "net.ipv4.ip_forward=" >> $fil
+  sed -r -i 's/net\.ipv4\.ip_forward[ ]*=.*/net\.ipv4\.ip_forward=1/g' $fil
+  sed -r -i 's/#net\.ipv4\.ip_forward=1/net\.ipv4\.ip_forward=1/g' $fil
 
   fil="/etc/dhcpcd.conf$templ"
   echo `date +"%Y-%m-%d %T"` "create $fil"
@@ -314,6 +318,11 @@ EOF
   fil="/etc/hostapd/hostapd.conf$templ"
   echo `date +"%Y-%m-%d %T"` "create $fil (pls. adjust SSID, PWD and country code)"
   cat <<EOF > "$fil"
+#start#### do not change next few lines ######
+#autostart=0
+#useiptables=0
+#end###### used by hotspot script ############
+
 ctrl_interface=/var/run/hostapd
 ctrl_interface_group=0
 interface=ap0
@@ -375,17 +384,16 @@ case "$opt1" in
             Hotspot_Setup "$opt2"
             ;;
         autostart)
-            Hotspot_AutoStart "$opt2"
+            Mdfy_Para     "autostart"   "$opt2"
+            ;;
+        useiptables)
+            Mdfy_Para     "useiptables" "$opt2"
             ;;
         status)
             Hotspot_Status
             ;;
-        restart)
-            Hotspot_Stop
-            Hotspot_Start
-            ;;
         *)
-        printf 'Usage: %s try | start [wlan] | stop [nowlan] | restart | status | iap | setup | autostart [enable|disable] | iptables [add|del] | setchan [channel] | wlan [start|stop]\n' "${0##*/}"
+        printf 'Usage: %s try | start [wlan] | stop [nowlan] | status | setup | autostart [0|1] | useiptables [0|1] | setchan [channel] | wlan [start|stop]\n' "${0##*/}"
             exit 1
 esac
 
