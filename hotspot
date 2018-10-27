@@ -18,10 +18,10 @@ ap_revnet="141.3.10"
 ns_dom="local"
 wpactrl="/var/run/wpa_supplicant"
 wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
-wpasupif="/etc/wpa_supplicant/wpa_supplicant-wlan0.conf"
+wpasupif="/etc/wpa_supplicant/wpa_supplicant-${wlan_dev}.conf"
 hostn="`hostname`"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
-spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wlan_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
+spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/${wlan_dev}/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
 spot_cntry2="DE"
 
