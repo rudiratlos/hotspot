@@ -10,8 +10,11 @@ functions:
 - restart
 - status 
 - setup [notemplate]
-- autostart [0|1] 
-- useiptables [0|1] 
+- autostart <0|1>
+- useiptables <0|1>
+- country <XX>
+- ssid <ssid>
+- pwd <pwd> 
 - setchan [channel] 
 - wlan [start|stop]
 
@@ -32,7 +35,7 @@ root:# apt-get upgrade
 ## setup
 
 will install all required packages (hostapd and dnsmasq),\
-setting paramters and create config files:
+setting parameters and create config files:
 
 - activate net.ipv4.ip_forward=1 in file /etc/sysctl.conf 
 - /etc/rc.local_template
@@ -87,20 +90,40 @@ stop hotspot functions:
 hotspot stop
 ~~~
 
-## autostart
+## set parameter in /etc/hostapd/hostapd.conf
 
-set autostart parameter in file ( /etc/hostapd/hostapd.conf ).\
-During boot process /etc/rc.local will look for file content ***autostart=1*** and will execute **hotspot try** command.
+set specific parameters in file ( /etc/hostapd/hostapd.conf ).\
+
+### autostart
+
+During boot process /etc/rc.local will look for file content ***#autostart=1*** and will execute **hotspot try** command.
 
 ~~~bash
-hotspot autostart 1      # enable  autostart
-hotspot autostart 0      # disable autostart
+hotspot autostart 1      	# enable  autostart
+hotspot autostart 0      	# disable autostart
 ~~~
 
-## useiptables
+### country
 
-set useiptables parameter in file ( /etc/hostapd/hostapd.conf ).\
-hotspot script will look for file content ***useiptables=1*** or ***useiptables=0*** and will execute **iptables** commands for activation and deactivation.
+~~~bash
+hotspot country DE			# set parameter country_code=DE
+~~~
+
+### pwd
+
+~~~bash
+hotspot pwd changeme		# set parameter wpa_passphrase=changeme
+~~~
+
+### ssid
+
+~~~bash
+hotspot ssid myHotSpotSSID	# set parameter ssid=myHotSpotSSID
+~~~
+
+### useiptables
+
+hotspot script will look for file content ***#useiptables=1*** or ***#useiptables=0*** and will execute **iptables** commands for activation and deactivation.
 
 ~~~bash
 hotspot useiptables 1      # executing iptable commands
