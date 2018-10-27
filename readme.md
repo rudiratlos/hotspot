@@ -92,33 +92,33 @@ hotspot stop
 
 ## set parameter in /etc/hostapd/hostapd.conf
 
-set specific parameters in file ( /etc/hostapd/hostapd.conf ).\
+set specific parameters in file ( /etc/hostapd/hostapd.conf ).
 
 ### autostart
 
 During boot process /etc/rc.local will look for file content ***#autostart=1*** and will execute **hotspot try** command.
 
 ~~~bash
-hotspot autostart 1      	# enable  autostart
-hotspot autostart 0      	# disable autostart
+hotspot autostart 1         # enable  autostart
+hotspot autostart 0         # disable autostart
 ~~~
 
 ### country
 
 ~~~bash
-hotspot country DE			# set parameter country_code=DE
+hotspot country DE          # set parameter country_code=DE
 ~~~
 
 ### pwd
 
 ~~~bash
-hotspot pwd changeme		# set parameter wpa_passphrase=changeme
+hotspot pwd changeme        # set parameter wpa_passphrase=changeme
 ~~~
 
 ### ssid
 
 ~~~bash
-hotspot ssid myHotSpotSSID	# set parameter ssid=myHotSpotSSID
+hotspot ssid myHotSpotSSID  # set parameter ssid=myHotSpotSSID
 ~~~
 
 ### useiptables
@@ -126,6 +126,6 @@ hotspot ssid myHotSpotSSID	# set parameter ssid=myHotSpotSSID
 hotspot script will look for file content ***#useiptables=1*** or ***#useiptables=0*** and will execute **iptables** commands for activation and deactivation.
 
 ~~~bash
-hotspot useiptables 1      # executing iptable commands
-hotspot useiptables 0      # no iptable commands
+hotspot useiptables 1       # executing iptable commands
+hotspot useiptables 0       # no iptable commands
 ~~~
