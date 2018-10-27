@@ -25,6 +25,8 @@ rpi login as root required
 root:# cd /usr/local/sbin
 root:# wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
 root:# chmod +x hotspot
+root:# apt-get update
+root:# apt-get upgrade
 ~~~
 
 ## setup
