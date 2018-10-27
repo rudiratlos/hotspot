@@ -27,8 +27,9 @@ and create config files:
 - /etc/dnsmasq.conf_template
 - /etc/default/hostapd_template
 - /etc/hostapd/hostapd.conf_template
+
 ~~~bash
-`hotspot setup`
+hotspot setup
 ~~~
 
 ### setup notemplate
@@ -36,7 +37,7 @@ and create config files:
 create config files without *_template*. *!! This will overwrite existing files !!*
 
 ~~~bash
-`hotspot setup notemplate`
+hotspot setup notemplate
 ~~~
 
 ## start
@@ -49,7 +50,7 @@ start all hotspot associated functions:
 - start hostapd 
 
 ~~~bash
-`hotspot start`
+hotspot start
 ~~~
 
 ## try
@@ -57,7 +58,7 @@ start all hotspot associated functions:
 start hotspot if wlan is not connected, or wlan0 and eth0 IP addrs are on same subnet.
 
 ~~~bash
-`hotspot try`
+hotspot try
 ~~~
 
 ## stop
@@ -69,7 +70,7 @@ stop hotspot functions:
 - restart wlan
 
 ~~~bash
-`hotspot stop`
+hotspot stop
 ~~~
 
 ## restart
@@ -77,7 +78,7 @@ stop hotspot functions:
 stop hotspot and start hotspot
 
 ~~~bash
-`hotspot restart`
+hotspot restart
 ~~~
 
 ## autostart
