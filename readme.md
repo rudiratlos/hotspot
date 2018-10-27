@@ -1,6 +1,6 @@
-# hotpsot
+# hotspot V0.1
 
-shell script for setup and management of hotspot (hostapd) function on rpi plattform
+shell script for setup and management for hotspot (hostapd) functions on rpi platform
 
 functions:
 
@@ -16,6 +16,16 @@ functions:
 - wlan [start|stop]
 
 actions will be logged to /tmp/hotspot and syslog 
+
+## installation
+
+login as root required
+
+~~~bash
+cd /usr/local/sbin
+wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
+chmod +x hotspot
+~~~
 
 ## setup
 
@@ -34,7 +44,8 @@ hotspot setup
 
 ### setup notemplate
 
-create config files without *_template*. *!! This will overwrite existing files !!*
+create config files without ***_template***.\
+<font color="red">***!! This will overwrite existing files !!***</font>
 
 ~~~bash
 hotspot setup notemplate
@@ -84,5 +95,5 @@ hotspot restart
 ## autostart
 
 just create or delete a flag file ( /etc/default/hostapd_autostart ).\
-During boot process /etc/rc.local will look for existance of this file and will execute *hotspot try* command.
+During boot process /etc/rc.local will look for existance of this file and will execute ***hotspot try*** command.
 
