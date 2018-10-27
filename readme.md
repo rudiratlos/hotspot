@@ -19,12 +19,12 @@ actions will be logged to /tmp/hotspot and syslog
 
 ## installation
 
-login as root required
+rpi login as root required
 
 ~~~bash
-cd /usr/local/sbin
-wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
-chmod +x hotspot
+root:# cd /usr/local/sbin
+root:# wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
+root:# chmod +x hotspot
 ~~~
 
 ## setup
@@ -45,7 +45,7 @@ hotspot setup
 ### setup notemplate
 
 create config files without ***_template***.\
-<font color="red">***!! This will overwrite existing files !!***</font>
+***!! This will overwrite existing files !!***
 
 ~~~bash
 hotspot setup notemplate
