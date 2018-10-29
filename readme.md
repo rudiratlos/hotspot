@@ -48,8 +48,13 @@ hotspot setup
 create config files without ***_template***.\
 ***!! This will overwrite existing files !!***
 
+next commands will create all config files and adjusts parameter to your environment.
+
 ~~~bash
 hotspot setup notemplate
+hotspot modpar hostapd ssid myHotspotID 
+hotspot modpar hostapd wpa_passphrase myHotspotPassword
+hotspot modpar hostapd country DE
 ~~~
 
 ## start
