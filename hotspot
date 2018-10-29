@@ -1,5 +1,5 @@
 #!/bin/bash
-#V0.3
+#V0.4
 #file autocreated, do not edit
 # set -e execute script on error immediately # -x debug mode
 set +e
@@ -7,6 +7,9 @@ set +e
 
 opt1="$1"
 opt2="$2"
+opt3="$3"
+opt4="$4"
+snam="hotspot"
 eth_dev="eth0"
 wlan_dev="wlan0"
 ap_dev="ap0"
@@ -20,6 +23,8 @@ ns_dom="local"
 wpactrl="/var/run/wpa_supplicant"
 wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
 wpasupif="/etc/wpa_supplicant/wpa_supplicant-wlan0.conf"
+hostapdf="/etc/hostapd/hostapd.conf"
+dnsmasqf="/etc/dnsmasq.conf"
 hostn="`hostname`"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wlan_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
@@ -43,37 +48,40 @@ function Hotspot_Status {
   ps ax | grep wpa_ ; ip a ; hostname -I
 }
 
-function Mdfy_Para {
-  if [ "$1" != "" ]; then
-    logger -s -t hotspot  -s "  change   /etc/hostapd/hostapd.conf $1=$2"
-    sed -i -r "s/$1[ ]*=.*/$1=$2/g" "/etc/hostapd/hostapd.conf"
+function Mod_Para {
+  cfil="file_not_valid"
+  if [ "$1" == "hostapd" ]; then cfil="$hostapdf"; fi
+  if [ "$1" == "dnsmasq" ]; then cfil="$dnsmasqf"; fi
+  if [ "$cfil" != "file_not_valid" ]; then
+    logger -s -t $snam  -s "  change   $1 $2=$3 ($cfil)"
+    sed -i -r "s/$2[ ]*=.*/$2=$3/g" "$cfil"
   else
-    echo "  Mdfy_Para invalid option $1"
+    echo "  Mod_Para invalid file selector $1"
   fi
 }
 
 function use_iptables {
   if [ "`grep -c -F "useiptables=1" "/etc/hostapd/hostapd.conf"`" -gt "0" ]; then
     if [ "$1" == "add" ] || [ "$1" == "del" ]; then
-      logger -s -t hotspot "  IPtables $1"
+      logger -s -t $snam "  IPtables $1"
       if [ "$1" == "add" ]; then opt="-A"; else opt="-D"; fi
       iptables -t nat $opt POSTROUTING -s $ap_subn ! -d $ap_subn -j MASQUERADE
       iptables $opt FORWARD -i $eth_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
       iptables $opt FORWARD -i $ap_dev -o $eth_dev -j ACCEPT
     else
-      logger -s -t hotspot "  IPtables invalid option $1"
+      logger -s -t $snam "  IPtables invalid option $1"
     fi
   fi
 }
 
 function chk_wpa_fil {
   if [ -f "$wpasupg" ]; then
-    logger -s -t hotspot "  WARNING $wpasupg not for specific interface $wlan_dev"
+    logger -s -t $snam "  WARNING $wpasupg not for specific interface $wlan_dev"
     if [ ! -f "$wpasupif" ]; then
-      logger -s -t hotspot "  mv $wpasupg $wpasupif"
+      logger -s -t $snam "  mv $wpasupg $wpasupif"
       mv $wpasupg $wpasupif
     else
-      logger -s -t hotspot "  cp $wpasupg ${wpasupg}_YYYYMMDDhhmmss"
+      logger -s -t $snam "  cp $wpasupg ${wpasupg}_YYYYMMDDhhmmss"
       cp $wpasupg ${wpasupg}_`date +"%Y%m%d%H%M%S"`
       rm $wpasupg
     fi
@@ -82,17 +90,17 @@ function chk_wpa_fil {
 
 function inst_ap_dev {
   if [ "$wlan_dev" != "$ap_dev" ]; then
-    logger -s -t hotspot "  install and check dev $ap_dev ..."
+    logger -s -t $snam "  install and check dev $ap_dev ..."
     ip=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $2 }'`
     if [ "$ap_ipanet" != "$ip" ]; then
-      logger -s -t hotspot "  assign  dev $ap_dev $ap_ipanet"
+      logger -s -t $snam "  assign  dev $ap_dev $ap_ipanet"
       iw dev $wlan_dev interface add $ap_dev type __ap
       ip link set dev "$ap_dev" down
       ip addr flush dev "$ap_dev"
       ip a add "$ap_ipanet" brd + dev "$ap_dev"
       ip link set dev "$ap_dev" up
     fi
-    logger -s -t hotspot "  install dev $ap_dev done"
+    logger -s -t $snam "  install dev $ap_dev done"
   fi
 }
 
@@ -100,12 +108,12 @@ function wlan {
   case "$1" in
         start)
             chk_wpa_fil
-            logger -s -t hotspot "  start   wlan"
+            logger -s -t $snam "  start   wlan"
             wpa_supplicant -B -i $wlan_dev -c $wpasupif >/dev/null 2>&1
             ;;
         stop)
             chk_wpa_fil
-            logger -s -t hotspot "  stop    wlan"
+            logger -s -t $snam "  stop    wlan"
             wpa_cli -p $wpactrl -i $wlan_dev terminate >/dev/null 2>&1
             ;;
         *)
@@ -117,13 +125,13 @@ function wlan {
 function Mdfy_Chan {
   if [ "$1" != "" ]; then ch="$1";  else  ch="6"; fi
   if [ "$ch" -gt "14" ]; then hm="a"; else hm="g"; fi
-  Mdfy_Para "channel" "$ch"
-  Mdfy_Para "hw_mode" "$hm"
+  Mod_Para "hostapd" "channel" "$ch"
+  Mod_Para "hostapd" "hw_mode" "$hm"
 }
 
 function Hotspot_Start {
   Hotspot_Defines
-  logger -s -t hotspot "starting  hotspot ..."
+  logger -s -t $snam "starting  hotspot ..."
   chk_wpa_fil
   if [ "$opt2" != "wlan" ] || [ "$1" == "nowlan" ]; then
     wlan stop;
@@ -141,42 +149,42 @@ function Hotspot_Start {
   inst_ap_dev
   sleep 2
   use_iptables add
-  logger -s -t hotspot "  start   dnsmasq"
+  logger -s -t $snam "  start   dnsmasq"
   systemctl start dnsmasq
   sleep 2
-  logger -s -t hotspot "  start   hostapd (restart)"
+  logger -s -t $snam "  start   hostapd (restart)"
   systemctl start  hostapd
   sleep 2
   systemctl stop   hostapd
   sleep 5
   systemctl start  hostapd
-  logger -s -t hotspot "started   hotspot"
+  logger -s -t $snam "started   hotspot"
 }
 
 function Hotspot_Try {
-  logger -s -t hotspot "trying    hotspot ..."
+  logger -s -t $snam "trying    hotspot ..."
   sleep 20     # let wlan settle
   Hotspot_Defines
   if [ "$same_subn" == "yes" ]; then
-    logger -s -t hotspot "  on same subnet ($eth_dev $wlan_dev $wlan_subn)"
+    logger -s -t $snam "  on same subnet ($eth_dev $wlan_dev $wlan_subn)"
     Hotspot_Start nowlan
   else
     if [ "$wlan_subn" == "" ]; then
-      logger -s -t hotspot "  $wlan_dev   not connected"
+      logger -s -t $snam "  $wlan_dev   not connected"
       Hotspot_Start nowlan
     else
-      logger -s -t hotspot "  $wlan_dev   already connected"
+      logger -s -t $snam "  $wlan_dev   already connected"
     fi
   fi
 }
 
 function Hotspot_Stop {
-  logger -s -t hotspot "stopping  hotspot ..."
+  logger -s -t $snam "stopping  hotspot ..."
   chk_wpa_fil
-  logger -s -t hotspot "  stop    hostapd"
+  logger -s -t $snam "  stop    hostapd"
   systemctl stop hostapd
   sleep 2
-  logger -s -t hotspot "  stop    dnsmasq"
+  logger -s -t $snam "  stop    dnsmasq"
   systemctl stop dnsmasq
   echo 0 > /proc/sys/net/ipv4/ip_forward
   sleep 2
@@ -186,7 +194,7 @@ function Hotspot_Stop {
     sleep 10;
   fi
   use_iptables del
-  logger -s -t hotspot "stopped   hotspot"
+  logger -s -t $snam "stopped   hotspot"
 }
 
 function Hotspot_Setup {
@@ -371,11 +379,8 @@ case "$opt1" in
         wlan)
             wlan          "$opt2"
             ;;
-        iap)
-            inst_ap_dev
-            ;;
-        iptables)
-            iptables      "$opt2"
+        modpar)
+            Mod_Para      "$opt2" "$opt3" "$opt4"
             ;;
         setchan)
             Mdfy_Chan     "$opt2" "given_by_cli"
@@ -383,26 +388,11 @@ case "$opt1" in
         setup)
             Hotspot_Setup "$opt2"
             ;;
-        autostart)
-            Mdfy_Para     "autostart"      "$opt2"
-            ;;
-        useiptables)
-            Mdfy_Para     "useiptables"    "$opt2"
-            ;;
-        country)
-            Mdfy_Para     "country_code"   "$opt2"
-            ;;
-        ssid)
-            Mdfy_Para     "ssid"           "$opt2"
-            ;;
-        pwd)
-            Mdfy_Para     "wpa_passphrase" "$opt2"
-            ;;
         status)
             Hotspot_Status
             ;;
         *)
-        printf 'Usage: %s try | start [wlan] | stop [nowlan] | status | setup | autostart <0|1> | useiptables <0|1> | ssid <ssid> | pwd <pwd> | country <XX> | setchan <channel> | wlan <start|stop>\n' "${0##*/}"
+        echo "Usage: $snam try | start [wlan] | stop [nowlan] | status | setup | setchan <channel> | modpar <dnsmasq|hostapd> <name> <value> | wlan <start|stop>"
             exit 1
 esac
 
