@@ -10,7 +10,7 @@ functions:
 - status 
 - setup [notemplate]
 - setchan [channel] 
-- modpar <dnsmasq|hostapd> <name> <value>
+- modpar \<dnsmasq|hostapd\> \<name\> \<value\>
 - wlan [start|stop]
 
 actions will be logged to /tmp/hotspot and syslog 
@@ -95,7 +95,7 @@ hotspot stop
 change parameter value in config file
 
 format:
-hotspot modpar <dnsmasq|hostapd> <name> <value>
+hotspot modpar \<dnsmasq|hostapd\> \<name\> \<value\>
 
 ~~~
 file selector:

@@ -13,8 +13,8 @@ snam="hotspot"
 eth_dev="eth0"
 wlan_dev="wlan0"
 ap_dev="ap0"
-ap_ip="10.3.141.1"
 ap_net="10.3.141"
+ap_ip="10.3.141.1"
 ap_ipanet="10.3.141.1/24"
 ap_subn="10.3.141.0/24"
 ap_revip="1.141.3.10"
@@ -53,7 +53,7 @@ function Mod_Para {
   if [ "$1" == "hostapd" ]; then cfil="$hostapdf"; fi
   if [ "$1" == "dnsmasq" ]; then cfil="$dnsmasqf"; fi
   if [ "$cfil" != "file_not_valid" ]; then
-    logger -s -t $snam  -s "  change   $1 $2=$3 ($cfil)"
+    logger -s -t $snam "  change   $1 $2=$3 ($cfil)"
     sed -i -r "s/$2[ ]*=.*/$2=$3/g" "$cfil"
   else
     echo "  Mod_Para invalid file selector $1"
@@ -136,9 +136,9 @@ function Hotspot_Start {
   if [ "$opt2" != "wlan" ] || [ "$1" == "nowlan" ]; then
     wlan stop;
  fi
-  logger "stop   hostapd"
+  logger -t $snam "stop   hostapd"
   systemctl stop hostapd
-  logger "stop   dnsmasq"
+  logger -t $snam "stop   dnsmasq"
   systemctl stop dnsmasq
   chanw=`iwlist $wlan_dev channel | awk '/urrent / { print $5 }' | sed 's/)//g'`
   chanh=`cat /etc/hostapd/hostapd.conf | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
@@ -223,7 +223,7 @@ fi
 # Print the IP address
 _IP=\$(hostname -I) || true
 if [ "\$_IP" ]; then
-  logger -s "My IP address is \$_IP"
+  logger -s -t hotspot "My IP address is \$_IP"
 fi
 
 exit 0
