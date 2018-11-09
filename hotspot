@@ -1,5 +1,5 @@
 #!/bin/bash
-#V0.4
+#V0.5
 #file autocreated, do not edit
 # set -e execute script on error immediately # -x debug mode
 set +e
@@ -88,6 +88,11 @@ function chk_wpa_fil {
   fi
 }
 
+function stop_ap_dev {
+  ip link set dev "$ap_dev" down
+  ip addr flush dev "$ap_dev"
+}
+
 function inst_ap_dev {
   if [ "$wlan_dev" != "$ap_dev" ]; then
     logger -s -t $snam "  install and check dev $ap_dev ..."
@@ -95,8 +100,7 @@ function inst_ap_dev {
     if [ "$ap_ipanet" != "$ip" ]; then
       logger -s -t $snam "  assign  dev $ap_dev $ap_ipanet"
       iw dev $wlan_dev interface add $ap_dev type __ap
-      ip link set dev "$ap_dev" down
-      ip addr flush dev "$ap_dev"
+      stop_ap_dev
       ip a add "$ap_ipanet" brd + dev "$ap_dev"
       ip link set dev "$ap_dev" up
     fi
@@ -187,13 +191,14 @@ function Hotspot_Stop {
   logger -s -t $snam "  stop    dnsmasq"
   systemctl stop dnsmasq
   echo 0 > /proc/sys/net/ipv4/ip_forward
-  sleep 2
-  if [ "$opt2" != "nowlan" ]; then
-    sleep 2;
-    wlan start;
-    sleep 10;
-  fi
   use_iptables del
+  sleep 2
+  if [ "$opt2" != "nowlan" ] && [ "$1" != "nowlan" ]; then
+    wlan start
+    sleep 10
+  fi
+  logger -s -t $snam "  link    down $ap_dev"
+  stop_ap_dev
   logger -s -t $snam "stopped   hotspot"
 }
 
@@ -376,6 +381,18 @@ case "$opt1" in
         stop)
             Hotspot_Stop  "$opt2"
             ;;
+     restart)
+            Hotspot_Stop   nowlan
+            logger -s -t $snam "  20sec  settle time"
+            sleep 20
+            Hotspot_Start "$opt2"
+            ;;
+       retry)
+            Hotspot_Stop   nowlan
+            logger -s -t $snam "  20sec  settle time"
+            sleep 20
+            Hotspot_Try   "$opt2"
+            ;;
         wlan)
             wlan          "$opt2"
             ;;
@@ -392,7 +409,7 @@ case "$opt1" in
             Hotspot_Status
             ;;
         *)
-        echo "Usage: $snam try | start [wlan] | stop [nowlan] | status | setup | setchan <channel> | modpar <dnsmasq|hostapd> <name> <value> | wlan <start|stop>"
+        echo "Usage: $snam try | start [wlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan <channel> | modpar <dnsmasq|hostapd> <name> <value> | wlan <start|stop>"
             exit 1
 esac
 

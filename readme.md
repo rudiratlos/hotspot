@@ -1,15 +1,17 @@
 # hotspot
 
-shell script for setup and management for hotspot (hostapd) functions on rpi platform
+shell script for setup and management of hotspot (hostapd) functions on rpi platform
 
 functions:
 
 - try
 - start
-- stop 
-- status 
+- stop
+- restart
+- retry
+- status
 - setup [notemplate]
-- setchan [channel] 
+- setchan [channel]
 - modpar \<dnsmasq|hostapd\> \<name\> \<value\>
 - wlan [start|stop]
 
@@ -45,8 +47,21 @@ hotspot setup
 
 ### setup notemplate
 
-create config files without ***_template***.\
+create config files without filename part ***_template***.\
 ***!! This will overwrite existing files !!***
+
+~~~bash
+hotspot setup notemplate
+
+hotspot try
+~~~
+
+above command sequence will create hotspot with following default parameter:
+
+ssid:    \<HOSTNAME\>wlan-\<MAC3ByteAdr\> (e.g. RPIwlan-abcdef)
+pwd:     hallohallo
+country: DE
+
 
 next commands will create all config files and adjusts parameter to your environment.
 
@@ -54,7 +69,9 @@ next commands will create all config files and adjusts parameter to your environ
 hotspot setup notemplate
 hotspot modpar hostapd ssid myHotspotID 
 hotspot modpar hostapd wpa_passphrase myHotspotPassword
-hotspot modpar hostapd country DE
+hotspot modpar hostapd country SE
+
+hotspot try
 ~~~
 
 ## start
@@ -78,16 +95,40 @@ start hotspot if wlan is not connected, or wlan0 and eth0 IP addrs are on same s
 hotspot try
 ~~~
 
-## stop
+## stop [nowlan]
 
 stop hotspot functions:
 
 - stop hostapd
 - stop dnsmasq
-- restart wlan
+- optional: restart wlan
 
 ~~~bash
 hotspot stop
+~~~
+
+## restart
+
+executes following sequence:
+
+- hotspot stop nowlan
+- sleep 20 seconds (settling time)
+- hotspot start
+
+~~~bash
+hotspot restart
+~~~
+
+## retry
+
+executes following sequence:
+
+- hotspot stop nowlan
+- sleep 20 seconds (settling time)
+- hotspot try
+
+~~~bash
+hotspot retry
 ~~~
 
 ## modpar
@@ -109,7 +150,7 @@ value			parameter value
 examples:
 ~~~bash
 hotspot modpar hostapd ssid myHotspotID     # set parameter ssid=myHotspotID
-hotspot modpar hostapd country DE           # set parameter country_code=DE
+hotspot modpar hostapd country_code DE      # set parameter country_code=DE
 ~~~
 
 ### special hostapd parameter
@@ -130,4 +171,23 @@ hotspot script will look for file content ***#useiptables=1*** or ***#useiptable
 ~~~bash
 hotspot modpar hostapd useiptables 1        # executing iptable commands
 hotspot modpar hostapd useiptables 0        # no iptable commands
+~~~
+
+## troubleshooting
+
+log entries will be sent to the file /tmp/hotspot.log and syslog utility
+
+following commands will show you hotspot script activity
+
+~~~bash
+cat /tmp/hotspot.log
+tail -500 /var/log/syslog | grep -a "hotspot:"
+cat /var/log/syslog | grep -a "hotspot:"
+~~~
+
+these commands will show 5 log entries of involved SW packages caused by hotspot command sequence
+
+~~~bash
+tail -500 /var/log/syslog | grep -a -A 5 "hotspot:"
+cat /var/log/syslog | grep -a -A 5 "hotspot:"
 ~~~
