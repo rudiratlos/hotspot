@@ -18,6 +18,8 @@ functions:
 actions will be logged to /tmp/hotspot and syslog\
 pls. see examples in troubleshooting section
 
+for full installation and setup sequence, pls. see **installation and setup** section at the bottom of this file
+
 ## installation
 
 rpi login as root required
@@ -172,6 +174,28 @@ hotspot script will look for file content ***#useiptables=1*** or ***#useiptable
 ~~~bash
 hotspot modpar hostapd useiptables 1        # executing iptable commands
 hotspot modpar hostapd useiptables 0        # no iptable commands
+~~~
+
+## installation and setup
+
+rpi login as root required
+
+~~~bash
+root:# cd /usr/local/sbin
+root:# wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
+root:# chmod +x hotspot
+root:# apt-get update
+root:# apt-get upgrade                      # optional
+
+root:# hotspot setup notemplate             # !! will overwrite your config files !!
+
+root:# hotspot modpar hostapd ssid myHotspotID 
+root:# hotspot modpar hostapd wpa_passphrase myHotspotPassword
+root:# hotspot modpar hostapd country SE
+root:# hotspot modpar hostapd autostart 1   # optional autostart enable
+root:# hotspot modpar hostapd useiptables 1 # optional
+
+root:# reboot                               # if autostart enable or use hotspot try
 ~~~
 
 ## troubleshooting
