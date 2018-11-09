@@ -61,7 +61,7 @@ above command sequence will create hotspot with following default parameter:
 
 ssid:    \<HOSTNAME\>wlan-\<MAC3ByteAdr\> (e.g. RPIwlan-abcdef)\
 pwd:     hallohallo\
-country: DE\
+country: DE
 
 
 next commands will create all config files and adjusts parameter to your environment.
