@@ -15,7 +15,8 @@ functions:
 - modpar \<dnsmasq|hostapd\> \<name\> \<value\>
 - wlan [start|stop]
 
-actions will be logged to /tmp/hotspot and syslog 
+actions will be logged to /tmp/hotspot and syslog\
+pls. see examples in troubleshooting section
 
 ## installation
 
@@ -58,9 +59,9 @@ hotspot try
 
 above command sequence will create hotspot with following default parameter:
 
-ssid:    \<HOSTNAME\>wlan-\<MAC3ByteAdr\> (e.g. RPIwlan-abcdef)
-pwd:     hallohallo
-country: DE
+ssid:    \<HOSTNAME\>wlan-\<MAC3ByteAdr\> (e.g. RPIwlan-abcdef)\
+pwd:     hallohallo\
+country: DE\
 
 
 next commands will create all config files and adjusts parameter to your environment.
@@ -109,7 +110,7 @@ hotspot stop
 
 ## restart
 
-executes following sequence:
+executes following hotspot sequence:
 
 - hotspot stop nowlan
 - sleep 20 seconds (settling time)
@@ -121,7 +122,7 @@ hotspot restart
 
 ## retry
 
-executes following sequence:
+executes following hotspot sequence:
 
 - hotspot stop nowlan
 - sleep 20 seconds (settling time)
