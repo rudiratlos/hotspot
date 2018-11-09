@@ -183,7 +183,7 @@ hotspot modpar hostapd useiptables 0        # no iptable commands
 
 ## syslog [lines]
 
-show hotspot syslog entries version
+show hotspot related syslog entries
 
 ~~~bash
 hotspot syslog
