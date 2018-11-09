@@ -1,10 +1,11 @@
 #!/bin/bash
-# V0.5
+#V0.6
 #file autocreated, do not edit
 # set -e execute script on error immediately # -x debug mode
 set +e
 #set -x
 
+hotspotver="V0.6"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -15,6 +16,7 @@ wlan_dev="wlan0"
 ap_dev="ap0"
 ap_net="10.3.141"
 ap_ip="10.3.141.1"
+ap_subn="10.3.141.255"
 ap_ipanet="10.3.141.1/24"
 ap_subn="10.3.141.0/24"
 ap_revip="1.141.3.10"
@@ -121,9 +123,14 @@ function wlan {
             wpa_cli -p $wpactrl -i $wlan_dev terminate >/dev/null 2>&1
             ;;
         *)
-            echo $"Usage: $0 {wlan start|stop}"
+            echo "Usage: $snam wlan start|stop"
             exit 1
   esac
+}
+
+function do_syslog {
+  if [ "$1" != "" ]; then lins="-A $1"; else lins=""; fi
+  tail -500 /var/log/syslog | grep -a $lins "${snam}:"
 }
 
 function Mdfy_Chan {
@@ -137,9 +144,9 @@ function Hotspot_Start {
   Hotspot_Defines
   logger -s -t $snam "starting  hotspot ..."
   chk_wpa_fil
-  if [ "$opt2" != "wlan" ] || [ "$1" == "nowlan" ]; then
+  if [ "$1" == "nowlan" ]; then
     wlan stop;
- fi
+  fi
   logger -t $snam "stop   hostapd"
   systemctl stop hostapd
   logger -t $snam "stop   dnsmasq"
@@ -178,6 +185,13 @@ function Hotspot_Try {
       Hotspot_Start nowlan
     else
       logger -s -t $snam "  $wlan_dev   already connected"
+      if [ "$wlan_subn" == "$ap_subn" ]; then
+        logger -s -t $snam "  $wlan_dev   in same dev $ap_dev subnet $ap_subn (no hotspot start)"
+      else
+        logger -s -t $snam "  notsup  wlan and hotspot in parallel currently not supported"
+#       Hotspot_Start wlan
+        sleep 1
+      fi
     fi
   fi
 }
@@ -193,11 +207,11 @@ function Hotspot_Stop {
   echo 0 > /proc/sys/net/ipv4/ip_forward
   use_iptables del
   sleep 2
-  if [ "$opt2" != "nowlan" ] && [ "$1" != "nowlan" ]; then
+  if [ "$1" != "nowlan" ]; then
     wlan start
     sleep 10
   fi
-  logger -s -t $snam "  link    down $ap_dev"
+  logger -s -t $snam "  link    down dev $ap_dev"
   stop_ap_dev
   logger -s -t $snam "stopped   hotspot"
 }
@@ -207,7 +221,7 @@ function Hotspot_Setup {
   if [ "$1" != "notemplate" ]; then templ="_template"; else templ=""; fi
 
   echo `date +"%Y-%m-%d %T"` "install sw packages"
-  apt-get -qy install hostapd dnsmasq
+  apt-get -qy install iw hostapd dnsmasq
 # disable/stop services. starting by script if needed
   systemctl disable dnsmasq.service >/dev/null 2>&1
   systemctl disable hostapd.service >/dev/null 2>&1
@@ -331,7 +345,7 @@ EOF
   fil="/etc/hostapd/hostapd.conf$templ"
   echo `date +"%Y-%m-%d %T"` "create $fil (pls. adjust SSID, PWD and country code)"
   cat <<EOF > "$fil"
-#start#### do not change next few lines ######
+#start#### do not remove next few lines ######
 #autostart=0
 #useiptables=0
 #end###### used by hotspot script ############
@@ -405,11 +419,17 @@ case "$opt1" in
         setup)
             Hotspot_Setup "$opt2"
             ;;
+       syslog)
+            do_syslog     "$opt2"
+            ;;
+        version)
+            echo "$hotspotver"
+            ;;
         status)
             Hotspot_Status
             ;;
         *)
-        echo "Usage: $snam try | start [wlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan <channel> | modpar <dnsmasq|hostapd> <name> <value> | wlan <start|stop>"
+        echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan <channel> | syslog [lines] | modpar <dnsmasq|hostapd> <name> <value> | version | wlan <start|stop>"
             exit 1
 esac
 

@@ -12,7 +12,9 @@ functions:
 - status
 - setup [notemplate]
 - setchan [channel]
+- syslog [lines]
 - modpar \<dnsmasq|hostapd\> \<name\> \<value\>
+- version
 - wlan [start|stop]
 
 actions will be logged to /tmp/hotspot and syslog\
@@ -92,7 +94,10 @@ hotspot start
 
 ## try
 
-start hotspot if wlan is not connected, or wlan0 and eth0 IP addrs are on same subnet.
+will start hotspot if following condition is met:
+
+- wlan0 or eth0 not connected
+- wlan0 and eth0 IP addresses are on same IP subnet (wlan0 connection will be stopped)
 
 ~~~bash
 hotspot try
@@ -174,6 +179,23 @@ hotspot script will look for file content ***#useiptables=1*** or ***#useiptable
 ~~~bash
 hotspot modpar hostapd useiptables 1        # executing iptable commands
 hotspot modpar hostapd useiptables 0        # no iptable commands
+~~~
+
+## syslog [lines]
+
+show hotspot syslog entries version
+
+~~~bash
+hotspot syslog
+hotspot syslog 5
+~~~
+
+## version
+
+show hotspot script version
+
+~~~bash
+hotspot version
 ~~~
 
 ## installation and setup
