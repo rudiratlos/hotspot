@@ -488,7 +488,7 @@ case "$opt1" in
             Hotspot_Status
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan <channel> | syslog [lines] | tor <start|stop> | modpar <dnsmasq|hostapd> <name> <value> | version | wlan <start|stop>"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | tor [start|stop] | modpar <dnsmasq|hostapd> <name> [value] | version | wlan [start|stop]"
   exit 1
 esac
 
