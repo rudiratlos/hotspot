@@ -10,12 +10,13 @@ functions:
 - restart
 - retry
 - status
-- setup [notemplate]
+- setup
 - setchan [channel]
 - syslog [lines]
-- modpar \<dnsmasq|hostapd\> \<name\> \<value\>
+- tor [start|stop]
 - version
 - wlan [start|stop]
+- modpar \<dnsmasq|hostapd\> \<name\> \<value\>
 
 actions will be logged to /tmp/hotspot and syslog\
 pls. see examples in troubleshooting section
@@ -36,32 +37,25 @@ root:# apt-get upgrade
 
 ## setup
 
-will install all required packages (hostapd and dnsmasq),\
+will install all required packages (e.g. iw tor hostapd dnsmasq),\
 setting parameters and create config files:
 
-- activate net.ipv4.ip_forward=1 in file /etc/sysctl.conf 
-- /etc/rc.local_template
-- /etc/dhcpcd.conf_template
-- /etc/dnsmasq.conf_template
-- /etc/default/hostapd_template
-- /etc/hostapd/hostapd.conf_template
+- /etc/sysctl.conf (activate line net.ipv4.ip_forward=1) 
+- /etc/rc.local
+- /etc/dhcpcd.conf
+- /etc/dnsmasq.conf
+- /etc/default/hostapd
+- /etc/hostapd/hostapd.conf
+- /etc/tor/torrc
+
+Existing files will be backed up with a date extension (YYYYMMDDhhmmss). 
 
 ~~~bash
 hotspot setup
-~~~
-
-### setup notemplate
-
-create config files without filename part ***_template***.\
-***!! This will overwrite existing files !!***
-
-~~~bash
-hotspot setup notemplate
-
 hotspot try
 ~~~
 
-above command sequence will create hotspot with following default parameter:
+above command sequence will create a hotspot with following default parameter:
 
 ssid:    \<HOSTNAME\>wlan-\<MAC3ByteAdr\> (e.g. RPIwlan-abcdef)\
 pwd:     hallohallo\
@@ -71,7 +65,7 @@ country: DE
 next commands will create all config files and adjusts parameter to your environment.
 
 ~~~bash
-hotspot setup notemplate
+hotspot setup
 hotspot modpar hostapd ssid myHotspotID 
 hotspot modpar hostapd wpa_passphrase myHotspotPassword
 hotspot modpar hostapd country SE
@@ -172,6 +166,15 @@ hotspot modpar hostapd autostart 1          # enable  autostart
 hotspot modpar hostapd autostart 0          # disable autostart
 ~~~
 
+#### torstart
+
+start tor service automatically
+
+~~~bash
+hotspot modpar hostapd torstart 1           # enable  torstart
+hotspot modpar hostapd torstart 0           # disable torstart
+~~~
+
 #### useiptables
 
 hotspot script will look for file content ***#useiptables=1*** or ***#useiptables=0*** and will execute **iptables** commands for activation and deactivation.
@@ -188,6 +191,16 @@ show hotspot related syslog entries
 ~~~bash
 hotspot syslog
 hotspot syslog 5
+~~~
+
+## tor
+
+start or stop tor service **experimental**\
+pls. see ***torstart*** parameter for automatic starting tor service.
+
+~~~bash
+hotspot tor start                           # start tor service
+hotspot tor stop                            # stop  tor service
 ~~~
 
 ## version
@@ -209,7 +222,7 @@ root:# chmod +x hotspot
 root:# apt-get update
 root:# apt-get upgrade                      # optional
 
-root:# hotspot setup notemplate             # !! will overwrite your config files !!
+root:# hotspot setup
 
 root:# hotspot modpar hostapd ssid myHotspotID 
 root:# hotspot modpar hostapd wpa_passphrase myHotspotPassword

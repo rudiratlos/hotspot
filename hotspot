@@ -1,11 +1,11 @@
 #!/bin/bash
-#V0.6
+#V0.7
 #file autocreated, do not edit
 # set -e execute script on error immediately # -x debug mode
 set +e
 #set -x
 
-hotspotver="V0.6"
+hotspotver="V0.7"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -45,6 +45,14 @@ function Show_Defines {
   echo `date +"%Y-%m-%d %T"` "same_subn:$same_subn"
 }
 
+function fil_bck {
+  if [ "$1" != "" ] && [ -f "$1" ]
+  then
+    if [ "$2" != "" ]; then fn="$1.$2"; else fn="$1.old"; fi
+    cp "$1" "$fn"
+  fi
+}
+
 function Hotspot_Status {
 # echo `date +"%Y-%m-%d %T"` "Status Hotspot ..."
   ps ax | grep wpa_ ; ip a ; hostname -I
@@ -70,6 +78,8 @@ function use_iptables {
       iptables -t nat $opt POSTROUTING -s $ap_subn ! -d $ap_subn -j MASQUERADE
       iptables $opt FORWARD -i $eth_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
       iptables $opt FORWARD -i $ap_dev -o $eth_dev -j ACCEPT
+# Tor proxy
+#     iptables -t nat $opt PREROUTING -i $ap_dev -p tcp --syn -j REDIRECT --to-ports 9040
     else
       logger -s -t $snam "  IPtables invalid option $1"
     fi
@@ -113,17 +123,39 @@ function inst_ap_dev {
 function wlan {
   case "$1" in
         start)
-            chk_wpa_fil
+#           chk_wpa_fil
             logger -s -t $snam "  start   wlan"
             wpa_supplicant -B -i $wlan_dev -c $wpasupif >/dev/null 2>&1
             ;;
         stop)
-            chk_wpa_fil
+#           chk_wpa_fil
             logger -s -t $snam "  stop    wlan"
             wpa_cli -p $wpactrl -i $wlan_dev terminate >/dev/null 2>&1
             ;;
         *)
             echo "Usage: $snam wlan start|stop"
+            exit 1
+  esac
+}
+
+function do_tor {
+  case "$1" in
+        start)
+            logger -s -t $snam "  start   tor (experimental)"
+            iptables -F
+            iptables -t nat -F
+            iptables -t nat -A PREROUTING -i ap0 -p tcp --dport 22 -j REDIRECT --to-ports 22
+            iptables -t nat -A PREROUTING -i ap0 -p udp --dport 53 -j REDIRECT --to-ports 53
+            iptables -t nat -A PREROUTING -i ap0 -p tcp --syn -j REDIRECT --to-ports 9040
+            service tor restart
+            ;;
+        stop)
+            logger -s -t $snam "  stop    tor (experimental)"
+            service tor stop
+            iptables -t nat -D PREROUTING -i ap0 -p tcp --syn -j REDIRECT --to-ports 9040
+            ;;
+        *)
+            echo "Usage: $snam tor start|stop"
             exit 1
   esac
 }
@@ -143,7 +175,7 @@ function Mdfy_Chan {
 function Hotspot_Start {
   Hotspot_Defines
   logger -s -t $snam "starting  hotspot ..."
-  chk_wpa_fil
+# chk_wpa_fil
   if [ "$1" == "nowlan" ]; then
     wlan stop;
   fi
@@ -158,18 +190,17 @@ function Hotspot_Start {
   fi
   echo 1 > /proc/sys/net/ipv4/ip_forward
   inst_ap_dev
-  sleep 2
+  sleep 5
   use_iptables add
   logger -s -t $snam "  start   dnsmasq"
-  systemctl start dnsmasq
+  systemctl restart dnsmasq
   sleep 2
   logger -s -t $snam "  start   hostapd (restart)"
-  systemctl start  hostapd
-  sleep 2
-  systemctl stop   hostapd
-  sleep 5
-  systemctl start  hostapd
+  systemctl restart  hostapd
   logger -s -t $snam "started   hotspot"
+  if [ "`grep -c -F "torstart=1" "/etc/hostapd/hostapd.conf"`" -gt "0" ]; then
+    do_tor start
+  fi
 }
 
 function Hotspot_Try {
@@ -198,7 +229,7 @@ function Hotspot_Try {
 
 function Hotspot_Stop {
   logger -s -t $snam "stopping  hotspot ..."
-  chk_wpa_fil
+# chk_wpa_fil
   logger -s -t $snam "  stop    hostapd"
   systemctl stop hostapd
   sleep 2
@@ -218,17 +249,21 @@ function Hotspot_Stop {
 
 function Hotspot_Setup {
   echo `date +"%Y-%m-%d %T"` "Setup  Hotspot $1 ..."
-  if [ "$1" != "notemplate" ]; then templ="_template"; else templ=""; fi
 
   echo `date +"%Y-%m-%d %T"` "install sw packages"
-  apt-get -qy install iw hostapd dnsmasq
+  apt-get -qy install iw hostapd dnsmasq tor
 # disable/stop services. starting by script if needed
   systemctl disable dnsmasq.service >/dev/null 2>&1
-  systemctl disable hostapd.service >/dev/null 2>&1
   systemctl stop    dnsmasq.service >/dev/null 2>&1
+  systemctl disable hostapd.service >/dev/null 2>&1
   systemctl stop    hostapd.service >/dev/null 2>&1
+  update-rc.d tor   disable >/dev/null 2>&1
+  service tor stop  >/dev/null 2>&1
 
-  fil="/etc/rc.local$templ"
+  bckext=`date +"%Y%m%d%H%M%S"`
+
+  fil="/etc/rc.local"
+  fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
 #!/bin/sh -e
@@ -250,12 +285,14 @@ EOF
   chmod 750 "$fil"
 
   fil="/etc/sysctl.conf"
+  fil_bck "$fil" "$bckext"
 # net.ipv4.ip_forward=1
   grep -q -F "net.ipv4.ip_forward=" $fil || echo "net.ipv4.ip_forward=" >> $fil
   sed -r -i 's/net\.ipv4\.ip_forward[ ]*=.*/net\.ipv4\.ip_forward=1/g' $fil
   sed -r -i 's/#net\.ipv4\.ip_forward=1/net\.ipv4\.ip_forward=1/g' $fil
 
-  fil="/etc/dhcpcd.conf$templ"
+  fil="/etc/dhcpcd.conf"
+  fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
 hostname
@@ -269,16 +306,18 @@ option interface_mtu
 require dhcp_server_identifier
 slaac private
 
-timeout 5
+timeout 25
 
 denyinterfaces ap0
 interface ap0
   nohook wpa_supplicant
+  #static ip_address=10.3.141.1/24
 EOF
   chmod 664 "$fil"
   chown root:netdev "$fil"
 
-  fil="/etc/dnsmasq.conf$templ"
+  fil="/etc/dnsmasq.conf"
+  fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
 dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
@@ -334,7 +373,8 @@ localise-queries
 EOF
   chmod 644 "$fil"
 
-  fil="/etc/default/hostapd$templ"
+  fil="/etc/default/hostapd"
+  fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
 #RUN_DAEMON=yes
@@ -342,12 +382,14 @@ DAEMON_CONF="/etc/hostapd/hostapd.conf"
 EOF
   chmod 600 "$fil"
 
-  fil="/etc/hostapd/hostapd.conf$templ"
+  fil="/etc/hostapd/hostapd.conf"
+  fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil (pls. adjust SSID, PWD and country code)"
   cat <<EOF > "$fil"
 #start#### do not remove next few lines ######
 #autostart=0
 #useiptables=0
+#torstart=0
 #end###### used by hotspot script ############
 
 ctrl_interface=/var/run/hostapd
@@ -380,7 +422,21 @@ logger_stdout_level=4
 EOF
   chmod 640 "$fil"
 
-  if [ "$1" != "notemplate" ]; then echo `date +"%Y-%m-%d %T"` "rename *_template files for activation"; fi
+  fil="/etc/tor/torrc"
+  fil_bck "$fil" "$bckext"
+  echo `date +"%Y-%m-%d %T"` "create $fil"
+  cat <<EOF > "$fil"
+Log notice file /var/log/tor/notices.log
+VirtualAddrNetwork 10.192.0.0/10
+AutomapHostsSuffixes .onion,.exit
+AutomapHostsOnResolve 1
+TransPort 10.3.141.1:9040
+DNSPort 10.3.141.1:53
+EOF
+  chmod 644 "$fil"
+  touch /var/log/tor/notices.log
+  chown debian-tor /var/log/tor/notices.log
+  chmod 644 /var/log/tor/notices.log
 }
 
 Hotspot_Defines
@@ -389,47 +445,50 @@ case "$opt1" in
         try)
             Hotspot_Try   "$opt2"
             ;;
-        start)
+      start)
             Hotspot_Start "$opt2"
             ;;
-        stop)
+       stop)
             Hotspot_Stop  "$opt2"
             ;;
-     restart)
+    restart)
             Hotspot_Stop   nowlan
             logger -s -t $snam "  20sec  settle time"
             sleep 20
             Hotspot_Start "$opt2"
             ;;
-       retry)
+      retry)
             Hotspot_Stop   nowlan
             logger -s -t $snam "  20sec  settle time"
             sleep 20
             Hotspot_Try   "$opt2"
             ;;
-        wlan)
+       wlan)
             wlan          "$opt2"
             ;;
-        modpar)
+     modpar)
             Mod_Para      "$opt2" "$opt3" "$opt4"
             ;;
-        setchan)
+    setchan)
             Mdfy_Chan     "$opt2" "given_by_cli"
             ;;
-        setup)
+      setup)
             Hotspot_Setup "$opt2"
             ;;
-       syslog)
+     syslog)
             do_syslog     "$opt2"
             ;;
-        version)
+        tor)
+            do_tor        "$opt2"
+            ;;
+    version)
             echo "$hotspotver"
             ;;
-        status)
+     status)
             Hotspot_Status
             ;;
-        *)
-        echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan <channel> | syslog [lines] | modpar <dnsmasq|hostapd> <name> <value> | version | wlan <start|stop>"
-            exit 1
+          *)
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan <channel> | syslog [lines] | tor <start|stop> | modpar <dnsmasq|hostapd> <name> <value> | version | wlan <start|stop>"
+  exit 1
 esac
 
