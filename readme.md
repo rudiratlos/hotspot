@@ -16,7 +16,7 @@ functions:
 - tor [start|stop]
 - version
 - wlan [start|stop]
-- modpar \<dnsmasq|hostapd\> \<name\> \<value\>
+- modpar \<dnsmasq|hostapd\> \<name\> [value]
 
 actions will be logged to /tmp/hotspot and syslog\
 pls. see examples in troubleshooting section
@@ -138,7 +138,7 @@ hotspot retry
 change parameter value in config file
 
 format:
-hotspot modpar \<dnsmasq|hostapd\> \<name\> \<value\>
+hotspot modpar \<dnsmasq|hostapd\> \<name\> [value]
 
 ~~~
 file selector:
