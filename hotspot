@@ -1,11 +1,7 @@
 #!/bin/bash
-#V0.7
-#file autocreated, do not edit
-# set -e execute script on error immediately # -x debug mode
 set +e
-#set -x
 
-hotspotver="V0.7"
+hotspotver="V0.8"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -166,7 +162,12 @@ function do_syslog {
 }
 
 function Mdfy_Chan {
-  if [ "$1" != "" ]; then ch="$1";  else  ch="6"; fi
+  hf=`iw phy | grep -ciF "VHT Capabilities"`
+  if [ "$1" != "" ]; then
+    ch="$1";
+  else
+    if [ "$hf" -ge "1" ]; then ch="36"; else ch="6"; fi
+  fi
   if [ "$ch" -gt "14" ]; then hm="a"; else hm="g"; fi
   Mod_Para "hostapd" "channel" "$ch"
   Mod_Para "hostapd" "hw_mode" "$hm"
@@ -420,6 +421,8 @@ logger_syslog_level=4
 logger_stdout=-1
 logger_stdout_level=4
 EOF
+  Mdfy_Chan ""
+  Mod_Para  "hostapd" "autostart" "1"
   chmod 640 "$fil"
 
   fil="/etc/tor/torrc"
