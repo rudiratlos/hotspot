@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.910"
+hotspotver="V0.911"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -22,13 +22,6 @@ ap_ipanet="${ap_net}.1/24"
 ap_iptsubn="${ap_net}.0/24"
 ap_revip=`echo "$ap_ip" | awk -F "." '{ print $4"."$3"."$2"."$1 }'`
 ap_revnet=`echo "$ap_ip" | awk -F "." '{ print $3"."$2"."$1 }'`
-# find best channels
-chans2ghz=`iwlist "$wl0_dev" scan | grep -i "Frequency:2" | sort | uniq -c | sort -n | awk '/hannel / { print $5 }' | sed 's/[^0-9]*//g' | tr '\n' ' '`
-chans5ghz=`iwlist "$wl0_dev" scan | grep -i "Frequency:5" | sort | uniq -c | sort -n | awk '/hannel / { print $5 }' | sed 's/[^0-9]*//g' | tr '\n' ' '`
-chan2ghz=`echo "$chans2ghz" | awk '{print $1}'`
-chan5ghz=`echo "$chans5ghz" | awk '{print $1}'`
-if [ "$chan2ghz" == "" ]; then chan2ghz="6";  fi
-if [ "$chan5ghz" == "" ]; then chan5ghz="36"; fi
 #
 wpactrl="/var/run/wpa_supplicant"
 wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
@@ -123,7 +116,7 @@ function stop_ap_dev {
 
 function inst_ap_dev {
   if [ "$wl0_dev" != "$ap_dev" ]; then
-    logger -s -t $snam "  install and check dev $ap_dev"
+    logger -s -t $snam "  install & check dev $ap_dev"
     apnet255=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $4 }'`
     if [ "$ap_subn" != "$apnet255" ]; then
       logger -s -t $snam "  assign  dev $ap_dev $ap_ipanet"
@@ -143,16 +136,16 @@ function wlan {
   case "$1" in
         start)
 #           chk_wpa_fil
-            logger -s -t $snam "  start   wlan ($wl_dev)"
+            logger -s -t $snam "  start   wlan    $wl_dev"
             wpa_supplicant -B -i $wl_dev -c $wpasupif >/dev/null 2>&1
             ;;
         stop)
 #           chk_wpa_fil
-            logger -s -t $snam "  stop    wlan ($wl_dev)"
+            logger -s -t $snam "  stop    wlan    $wl_dev"
             wpa_cli -p $wpactrl -i $wl_dev terminate >/dev/null 2>&1
             ;;
         *)
-            echo "Usage: $snam wlan start|stop"
+            echo "Usage: $snam wlan start|stop [$wl0_dev|$wl1_dev]"
             exit 1
   esac
 }
@@ -186,33 +179,27 @@ function do_syslog {
 }
 
 function Mdfy_Chan {
-  hf=`iw phy | grep -ciF "VHT Capabilities"`
   logger -s -t $snam "  modify  channel strategy: $1"
-  logger -s -t $snam "  chans   2Ghz pref: $chan2ghz avail: $chans2ghz"
-  logger -s -t $snam "  chans   5Ghz pref: $chan5ghz avail: $chans5ghz"
   if [ "$2" != "" ]; then
     ch="$2"
   else
+    chan2ghz="6"
+    chan5ghz="36"
+    hf=`iw phy | grep -ciF "VHT Capabilities"`
     if [ "$hf" -ge "1" ]; then ch="$chan5ghz"; else ch="$chan2ghz"; fi
   fi
-  if [ "$ch" -le "14" ]; then
-    hm="g"
-  else
-    hm="a"
-    if [ "$ch" -gt "48" ]; then
-      logger -s -t $snam "  channel $ch can cause problem"
-    fi
-  fi
-  logger -s -t $snam "  channel select: $ch hw_mode: $hm"
+  if [ "$ch" -le "14" ]; then hm="g"; else hm="a"; fi
+  if [ "$ch" -gt "48" ]; then att="$ch (can cause problem)"; else att="$ch"; fi
+  logger -s -t $snam "  select  hw_mode $hm  chan $att"
   Mod_Para "hostapd" "channel" "$ch"
   Mod_Para "hostapd" "hw_mode" "$hm"
 }
 
 function Hotspot_Start {
   Hotspot_Defines
-  logger -s -t $snam "starting  hotspot $eth_dev $eth_ip $wl0_dev $wl0_ip"
+  logger -s -t $snam "starting  hotspot $hotspotver $eth_dev $eth_ip $wl0_dev $wl0_ip $wl1_dev $wl1_ip"
 # chk_wpa_fil
-  if [ "$1" == "nowlan" ]; then wlan stop; fi
+  if [ "$1" == "nowlan" ]; then wlan stop $wl0_dev; fi
   logger -t $snam "  stop    hostapd"
   systemctl stop hostapd
   logger -t $snam "  stop    dnsmasq"
@@ -222,7 +209,7 @@ function Hotspot_Start {
   if [ "$chanw" != "$chanh" ] && [ "$chanw" != "" ] && [ "$wl1_avail" != "yes" ]; then
     Mdfy_Chan "select same channel for ap & station mode" "$chanw" "$chanh"
   else
-    Mdfy_Chan "select best fitting channel for ap mode (least used)"
+    Mdfy_Chan "select channel for ap mode"
   fi
   echo 1 > /proc/sys/net/ipv4/ip_forward
   inst_ap_dev
@@ -231,7 +218,7 @@ function Hotspot_Start {
   logger -s -t $snam "  start   dnsmasq"
   systemctl restart dnsmasq
   sleep 2
-  logger -s -t $snam "  start   hostapd (restart)"
+  logger -s -t $snam "  start   hostapd restart"
   systemctl restart  hostapd
   logger -s -t $snam "started   hotspot"
 
@@ -254,7 +241,7 @@ function Hotspot_Try {
     Hotspot_Start nowlan
   else
     if [ "$wl0_subn" != "" ] && [ "$wl0_subn" != "$ap_subn" ]; then
-      logger -s -t $snam "  ap&sta  start hotspot in parallel to station mode (experimental not activated)"
+      logger -s -t $snam "  ap&sta  on $wl0_dev start hotspot in parallel to station mode (not activated, use additional device $wl1_dev)"
 #     Hotspot_Start wlan
     else
       logger -s -t $snam "  ERR: subnet conflict $eth_dev $eth_subn $wl0_dev $wl0_subn $ap_dev $ap_subn"
@@ -274,7 +261,7 @@ function Hotspot_Stop {
   use_iptables del
   sleep 2
   if [ "$1" != "nowlan" ]; then
-    wlan start
+    wlan start $wl0_dev
     sleep 10
   fi
   logger -s -t $snam "  link    down dev $ap_dev"
@@ -504,7 +491,7 @@ case "$opt1" in
             Hotspot_Try   "$opt2"
             ;;
        wlan)
-            wlan          "$opt2"
+            wlan          "$opt2" "$opt3"
             ;;
      modpar)
             Mod_Para      "$opt2" "$opt3" "$opt4"
@@ -528,7 +515,7 @@ case "$opt1" in
             Hotspot_Status
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | tor [start|stop] | modpar <crda|dnsmasq|hostapd> <name> [value] | version | wlan [start|stop]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | tor [start|stop] | modpar <crda|dnsmasq|hostapd> <name> [value] | version | wlan start|stop [$wl0_dev|$wl1_dev]"
   exit 1
 esac
 
