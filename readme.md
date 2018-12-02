@@ -246,6 +246,7 @@ log entries will be sent to the file /tmp/hotspot.log and syslog utility
 following commands will show you hotspot script activity
 
 ~~~bash
+hotspot syslog
 cat /tmp/hotspot.log
 tail -500 /var/log/syslog | grep -a "hotspot:"
 cat /var/log/syslog | grep -a "hotspot:"
@@ -254,6 +255,7 @@ cat /var/log/syslog | grep -a "hotspot:"
 these commands will show 5 log entries of involved SW packages caused by hotspot command sequence
 
 ~~~bash
+hotspot syslog 5
 tail -500 /var/log/syslog | grep -a -A 5 "hotspot:"
 cat /var/log/syslog | grep -a -A 5 "hotspot:"
 ~~~

@@ -14,7 +14,6 @@ eth_dev="eth0"
 # if defined, automatic discovery disabled
 wli_dev=""
 wle_dev=""
-#
 ap_dev="ap0"
 ap_devmac="b8:27:eb:00:00:00"
 ap_net="10.3.141"
@@ -41,7 +40,6 @@ fi
 #
 wpactrl="/var/run/wpa_supplicant"
 wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
-wpasupif="/etc/wpa_supplicant/wpa_supplicant-wlan0.conf"
 hostapdf="/etc/hostapd/hostapd.conf"
 dnsmasqf="/etc/dnsmasq.conf"
 crdaf="/etc/default/crda"
@@ -117,20 +115,6 @@ function use_iptables {
   fi
 }
 
-function chk_wpa_fil {
-  if [ -f "$wpasupg" ]; then
-    logger -s -t $snam "  WARNING $wpasupg not for specific interface $wli_dev"
-    if [ ! -f "$wpasupif" ]; then
-      logger -s -t $snam "  mv $wpasupg $wpasupif"
-      mv $wpasupg $wpasupif
-    else
-      logger -s -t $snam "  cp $wpasupg ${wpasupg}_YYYYMMDDhhmmss"
-      cp $wpasupg ${wpasupg}_`date +"%Y%m%d%H%M%S"`
-      rm $wpasupg
-    fi
-  fi
-}
-
 function stop_ap_dev {
   if [ "$1" != "" ]; then
     ip -force link set dev "$1" down
@@ -165,12 +149,10 @@ function wlan {
   if [ "$2" != "" ]; then wl_dev="$2"; fi
   case "$1" in
         start)
-#           chk_wpa_fil
             logger -s -t $snam "  start   wlan    $wl_dev"
-            wpa_supplicant -B -i $wl_dev -c $wpasupif >/dev/null 2>&1
+            wpa_supplicant -B -i $wl_dev -c $wpasupg >/dev/null 2>&1
             ;;
         stop)
-#           chk_wpa_fil
             logger -s -t $snam "  stop    wlan    $wl_dev"
             wpa_cli -p $wpactrl -i $wl_dev terminate >/dev/null 2>&1
             ;;
@@ -244,7 +226,6 @@ function Hotspot_Start {
   logger -s -t $snam "  ETHER   $eth_dev    $eth_ip"
   logger -s -t $snam "  WLANint $wli_dev   $wli_ip"
   logger -s -t $snam "  WLANext $wle_dev   $wle_ip"
-# chk_wpa_fil
   chanh=`cat "$hostapdf" | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
   if [ "$wle_avail" == "yes" ] || [ "$eth_ip" != "" ] || [ "yes" == "yes" ]; then
     Find_Chan $wli_dev 11
@@ -303,7 +284,6 @@ function Hotspot_Try {
 
 function Hotspot_Stop {
   logger -s -t $snam "stopping  hotspot"
-# chk_wpa_fil
   logger -s -t $snam "  stop       hostapd"
   systemctl stop hostapd
   sleep 2
