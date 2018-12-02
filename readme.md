@@ -18,8 +18,14 @@ functions:
 - wlan [start|stop]
 - modpar \<dnsmasq|hostapd\> \<name\> [value]
 
+will use on board wlan adaptor for hotspot functionality and\
+the on board ethernet port or an optional external usb wlan adaptor (e.g. EW-7811Un Realtek RTL8188CUS)\
+for internet access.
+
+best wlan channel for hotspot functionality will be determined automatically by least used frequency spectrum.
+
 actions will be logged to /tmp/hotspot and syslog\
-pls. see examples in troubleshooting section
+pls. see examples in troubleshooting section.
 
 for full installation and setup sequence, pls. see **installation and setup** section at the bottom of this file
 
