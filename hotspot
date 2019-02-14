@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.912"
+hotspotver="V0.913"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -228,7 +228,7 @@ function Hotspot_Start {
   logger -s -t $snam "  WLANext $wle_dev   $wle_ip"
   chanh=`cat "$hostapdf" | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
   if [ "$wle_avail" == "yes" ] || [ "$eth_ip" != "" ] || [ "yes" == "yes" ]; then
-    Find_Chan $wli_dev 11
+    Find_Chan "$wli_dev" "11"
     logger -s -t $snam "  FndChan suggest channel $chanw"
     msg="select channel for ap mode"
   else
