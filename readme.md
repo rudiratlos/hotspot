@@ -18,7 +18,7 @@ functions:
 - wlan [start|stop]
 - modpar \<dnsmasq|hostapd\> \<name\> [value]
 
-will use on board wlan adaptor for hotspot functionality and\
+will use onboard wlan adaptor for hotspot functionality and\
 the on board ethernet port or an optional external usb wlan adaptor (e.g. EW-7811Un Realtek RTL8188CUS)\
 for internet access.
 
@@ -35,6 +35,7 @@ rpi login as root required
 
 ~~~bash
 root:# cd /usr/local/sbin
+root:# rm hotspot                  # just remove old hotspot script
 root:# wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
 root:# chmod +x hotspot
 root:# apt-get update
@@ -48,6 +49,7 @@ setting parameters and create config files:
 
 - /etc/sysctl.conf (activate line net.ipv4.ip_forward=1) 
 - /etc/rc.local
+- /etc/issues
 - /etc/dhcpcd.conf
 - /etc/dnsmasq.conf
 - /etc/default/hostapd
@@ -223,6 +225,7 @@ rpi login as root required
 
 ~~~bash
 root:# cd /usr/local/sbin
+root:# rm hotspot                           # just remove old hotspot script
 root:# wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
 root:# chmod +x hotspot
 root:# apt-get update
