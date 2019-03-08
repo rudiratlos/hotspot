@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.913"
+hotspotver="V0.914"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -49,6 +49,15 @@ spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wli_dev/ad
 spot_psk="hallohallo"
 spot_cntry2="DE"
 
+function Show_Defines {
+  echo `date +"%Y-%m-%d %T"` "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
+  echo `date +"%Y-%m-%d %T"` "wli_dev:$wli_dev wli_subn:$wli_subn wli_ip:$wli_ip"
+  echo `date +"%Y-%m-%d %T"` "wle_dev:$wle_dev wle_subn:$wle_subn wle_ip:$wle_ip"
+  echo `date +"%Y-%m-%d %T"` "hs_try:$hs_try $wle_dev avail: $wle_avail"
+  echo `date +"%Y-%m-%d %T"` "wli_dev:$wli_dev wli_devs: $wli_devs"
+  echo `date +"%Y-%m-%d %T"` "wle_dev:$wle_dev wle_devs: $wle_devs"
+}
+
 function Hotspot_Defines {
   eth_ip=`ip addr show dev "$eth_dev" 2>/dev/null   | awk '/inet / { print $2 }'`
   wli_ip=`ip addr show dev "$wli_dev" 2>/dev/null   | awk '/inet / { print $2 }'`
@@ -61,15 +70,6 @@ function Hotspot_Defines {
   fi
   if [ "$eth_subn" != "$ap_subn" ] && { [ "$wle_avail" == "yes" ] || [ "$eth_subn" == "$wli_subn" ] || [ "$wli_subn" == "" ]; }; then hs_try="yes"; fi
 # Show_Defines
-}
-
-function Show_Defines {
-  echo `date +"%Y-%m-%d %T"` "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
-  echo `date +"%Y-%m-%d %T"` "wli_dev:$wli_dev wli_subn:$wli_subn wli_ip:$wli_ip"
-  echo `date +"%Y-%m-%d %T"` "wle_dev:$wle_dev wle_subn:$wle_subn wle_ip:$wle_ip"
-  echo `date +"%Y-%m-%d %T"` "hs_try:$hs_try $wle_dev avail: $wle_avail"
-  echo `date +"%Y-%m-%d %T"` "wli_dev:$wli_dev wli_devs: $wli_devs"
-  echo `date +"%Y-%m-%d %T"` "wle_dev:$wle_dev wle_devs: $wle_devs"
 }
 
 function fil_bck {
@@ -228,12 +228,14 @@ function Hotspot_Start {
   logger -s -t $snam "  WLANext $wle_dev   $wle_ip"
   chanh=`cat "$hostapdf" | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
   if [ "$wle_avail" == "yes" ] || [ "$eth_ip" != "" ] || [ "yes" == "yes" ]; then
+    apsta="no"
     Find_Chan "$wli_dev" "11"
     logger -s -t $snam "  FndChan suggest channel $chanw"
     msg="select channel for ap mode"
   else
+    apsta="yes"
     chanw=`iwlist $wli_dev channel | awk '/urrent / { print $5 }' | sed 's/)//g'`
-    msg="select same channel for ap & station mode (currently not supported)"
+    msg="select same channel for ap & station mode"
     logger -s -t $snam "  UseChan channel $chanw"
   fi
   if [ "$chanw" != "$chanh" ] && [ "$chanw" != "" ]; then
@@ -245,14 +247,15 @@ function Hotspot_Start {
   logger -t $snam "  stop    dnsmasq"
   systemctl stop dnsmasq
   echo 1 > /proc/sys/net/ipv4/ip_forward
+# if [ "$apsta" == "yes" ]; then ip link set $wli_dev down; fi
   inst_ap_dev $wli_dev
   sleep 5
   use_iptables add
-  logger -s -t $snam "  start   dnsmasq"
-  systemctl restart dnsmasq
-  sleep 2
   logger -s -t $snam "  start   hostapd restart"
   systemctl restart  hostapd
+# if [ "$apsta" == "yes" ]; then ip link set $wli_dev up; fi
+  logger -s -t $snam "  start   dnsmasq"
+  systemctl restart dnsmasq
   logger -s -t $snam "started   hotspot"
 
   if [ "`grep -c -F "nodogsplashstart=1" "$hostapdf"`" -gt "0" ]; then
@@ -318,7 +321,9 @@ function Hotspot_Setup {
   bckext=`date +"%Y%m%d%H%M%S"`
 
   fil="/etc/rc.local"
-  fil_bck "$fil" "$bckext"
+  fil2="/etc/issue"
+  fil_bck "$fil"  "$bckext"
+  fil_bck "$fil2" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
 #!/bin/sh -e
@@ -326,13 +331,16 @@ function Hotspot_Setup {
 #
 
 if [ "\`grep -c -F "autostart=1" "/etc/hostapd/hostapd.conf"\`" -gt "0" ]; then
-  hotspot try >/tmp/hotspot.log 2>&1 &
+  hotspot try >/tmp/hotspot.log 2>&1
 fi
 
 # Print the IP address
 _IP=\$(hostname -I) || true
 if [ "\$_IP" ]; then
   logger -s -t hotspot "My IP address is \$_IP"
+  printf "IP %s\nRaspbian GNU/Linux\n" "\$_IP" > /etc/issue
+else
+  printf "Raspbian GNU/Linux\n" > /etc/issue
 fi
 
 exit 0
@@ -457,7 +465,7 @@ channel=6
 hw_mode=g
 country_code=$spot_cntry2
 ssid=$spot_ssid
-wpa_passphrase=$spot_psk
+wpa_passphrase=hallohallo
 
 wpa=2
 wpa_key_mgmt=WPA-PSK
