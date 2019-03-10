@@ -331,7 +331,7 @@ function Hotspot_Setup {
 #
 
 if [ "\`grep -c -F "autostart=1" "/etc/hostapd/hostapd.conf"\`" -gt "0" ]; then
-  hotspot try >/tmp/hotspot.log 2>&1
+  hotspot try >/tmp/hotspot.log 2>&1 &
 fi
 
 # Print the IP address
