@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.914"
+hotspotver="V0.915"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -469,7 +469,7 @@ wpa_passphrase=hallohallo
 
 wpa=2
 wpa_key_mgmt=WPA-PSK
-wpa_pairwise=TKIP
+#wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 
 ieee80211n=1
