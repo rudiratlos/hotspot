@@ -13,6 +13,7 @@ functions:
 - setup
 - setchan [channel]
 - syslog [lines]
+- ovpn [start|stop]
 - tor [start|stop]
 - version
 - wlan [start|stop]
@@ -174,6 +175,15 @@ hotspot modpar hostapd autostart 1          # enable  autostart
 hotspot modpar hostapd autostart 0          # disable autostart
 ~~~
 
+#### ovpnstart
+
+start openvpn automatically
+
+~~~bash
+hotspot modpar hostapd ovpnstart 1         # enable  ovpnstart
+hotspot modpar hostapd ovpnstart 0         # disable ovpnstart
+~~~
+
 #### torstart
 
 start tor service automatically
@@ -190,6 +200,16 @@ hotspot script will look for file content ***#useiptables=1*** or ***#useiptable
 ~~~bash
 hotspot modpar hostapd useiptables 1        # executing iptable commands
 hotspot modpar hostapd useiptables 0        # no iptable commands
+~~~
+
+## openvpn
+
+start or stop openvpn **experimental**\
+pls. see ***ovpnstart*** parameter for automatic starting tor service.
+
+~~~bash
+hotspot ovpn start                         # start tor service
+hotspot ovpn stop                          # stop  tor service
 ~~~
 
 ## syslog [lines]

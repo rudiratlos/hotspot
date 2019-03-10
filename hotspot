@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.915"
+hotspotver="V0.916"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -48,6 +48,7 @@ hostn="`hostname`"
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wli_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
 spot_cntry2="DE"
+ovpn_opt="--config /etc/openvpn/client/openvpn.ovpn --auth-user-pass /etc/openvpn/client/openvpn.pwd"
 
 function Show_Defines {
   echo `date +"%Y-%m-%d %T"` "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
@@ -162,6 +163,29 @@ function wlan {
   esac
 }
 
+function do_ovpn {
+  case "$1" in
+        start)
+            logger -s -t $snam "  start   openvpn (experimental)"
+            iptables -F
+            iptables -t nat -F
+            iptables -X
+            iptables -t nat -A POSTROUTING -o tun0 -j MASQUERADE
+            iptables -A FORWARD -i tun0 -o ap0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+            iptables -A FORWARD -i ap0 -o tun0 -j ACCEPT
+
+            openvpn $ovpn_opt
+            ;;
+        stop)
+            logger -s -t $snam "  stop    openvpn (experimental)"
+            killall openvpn
+            ;;
+        *)
+            echo "Usage: $snam ovpn start|stop"
+            exit 1
+  esac
+}
+
 function do_tor {
   case "$1" in
         start)
@@ -263,6 +287,11 @@ function Hotspot_Start {
     nodogsplash
   fi
 
+  if [ "`grep -c -F "ovpnstart=1" "$hostapdf"`" -gt "0" ]; then
+    do_ovpn start
+  fi
+}
+
   if [ "`grep -c -F "torstart=1" "$hostapdf"`" -gt "0" ]; then
     do_tor start
   fi
@@ -308,7 +337,7 @@ function Hotspot_Setup {
   echo `date +"%Y-%m-%d %T"` "Setup  Hotspot $1 $2 ..."
   if [ "$1" != "noswpkg" ]; then
     echo `date +"%Y-%m-%d %T"` "install sw packages"
-    apt-get -qy install iw hostapd dnsmasq tor
+    apt-get -qy install iw hostapd dnsmasq tor openvpn
   fi
 # disable/stop services. starting by script if needed
   systemctl disable dnsmasq.service >/dev/null 2>&1
@@ -331,7 +360,7 @@ function Hotspot_Setup {
 #
 
 if [ "\`grep -c -F "autostart=1" "/etc/hostapd/hostapd.conf"\`" -gt "0" ]; then
-  hotspot try >/tmp/hotspot.log 2>&1 &
+  hotspot try >/tmp/hotspot.log 2>&1
 fi
 
 # Print the IP address
@@ -453,6 +482,7 @@ EOF
 #autostart=0
 #useiptables=0
 #torstart=0
+#ovpnstart=0
 #nodogsplashstart=0
 #end###### used by hotspot script ############
 
@@ -465,11 +495,10 @@ channel=6
 hw_mode=g
 country_code=$spot_cntry2
 ssid=$spot_ssid
-wpa_passphrase=hallohallo
+wpa_passphrase=$spot_psk
 
 wpa=2
 wpa_key_mgmt=WPA-PSK
-#wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 
 ieee80211n=1
@@ -548,6 +577,9 @@ case "$opt1" in
         tor)
             do_tor        "$opt2"
             ;;
+       ovpn)
+            do_ovpn       "$opt2"
+            ;;
     version)
             echo "$hotspotver"
             ;;
@@ -555,7 +587,7 @@ case "$opt1" in
             Hotspot_Status
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | tor [start|stop] | modpar <crda|dnsmasq|hostapd> <name> [value] | version | wlan start|stop [$wli_dev|$wle_dev]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | tor [start|stop] | ovpn [start|stop] | modpar <crda|dnsmasq|hostapd> <name> [value] | version | wlan start|stop [$wli_dev|$wle_dev]"
   exit 1
 esac
 
