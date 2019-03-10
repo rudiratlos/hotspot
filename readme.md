@@ -208,7 +208,7 @@ start or stop openvpn **experimental**\
 requires following files:\
   config: /etc/openvpn/client/openvpn.ovpn\
   passwd: /etc/openvpn/client/openvpn.pwd\
-pls. see ***ovpnstart*** parameter for automatic starting tor service.
+pls. see ***ovpnstart*** parameter for automatic starting openvpn
 
 ~~~bash
 hotspot ovpn start                          # start tor service
