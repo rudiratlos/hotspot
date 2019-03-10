@@ -151,8 +151,8 @@ hotspot modpar \<dnsmasq|hostapd\> \<name\> [value]
 
 ~~~
 file selector:
-dnsmasq 		/etc/dnsmasq.conf
-hostapd 		/etc/hostapd/hostapd.conf
+dnsmasq                 /etc/dnsmasq.conf
+hostapd                 /etc/hostapd/hostapd.conf
 
 name			parameter name
 value			parameter value
@@ -205,20 +205,14 @@ hotspot modpar hostapd useiptables 0        # no iptable commands
 ## openvpn
 
 start or stop openvpn **experimental**\
+requires following files:\
+  config: /etc/openvpn/client/openvpn.ovpn\
+  passwd: /etc/openvpn/client/openvpn.pwd\
 pls. see ***ovpnstart*** parameter for automatic starting tor service.
 
 ~~~bash
-hotspot ovpn start                         # start tor service
-hotspot ovpn stop                          # stop  tor service
-~~~
-
-## syslog [lines]
-
-show hotspot related syslog entries
-
-~~~bash
-hotspot syslog
-hotspot syslog 5
+hotspot ovpn start                          # start tor service
+hotspot ovpn stop                           # stop  tor service
 ~~~
 
 ## tor
@@ -229,6 +223,15 @@ pls. see ***torstart*** parameter for automatic starting tor service.
 ~~~bash
 hotspot tor start                           # start tor service
 hotspot tor stop                            # stop  tor service
+~~~
+
+## syslog [lines]
+
+show hotspot related syslog entries
+
+~~~bash
+hotspot syslog
+hotspot syslog 5
 ~~~
 
 ## version
