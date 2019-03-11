@@ -17,7 +17,7 @@ functions:
 - tor [start|stop]
 - version
 - wlan [start|stop]
-- modpar \<dnsmasq|hostapd\> \<name\> [value]
+- modpar \<dnsmasq|hostapd|self\> \<name\> [value]
 
 will use onboard wlan adaptor for hotspot functionality and\
 the on board ethernet port or an optional external usb wlan adaptor (e.g. EW-7811Un Realtek RTL8188CUS)\
@@ -147,7 +147,7 @@ hotspot retry
 change parameter value in config file
 
 format:
-hotspot modpar \<dnsmasq|hostapd\> \<name\> [value]
+hotspot modpar \<dnsmasq|hostapd|self\> \<name\> [value]
 
 ~~~
 file selector:
@@ -185,6 +185,14 @@ hotspot modpar hostapd ovpnstart 1         # enable  ovpnstart
 hotspot modpar hostapd ovpnstart 0         # disable ovpnstart
 ~~~
 
+adjust specific openvpn parameter
+
+~~~bash
+hotspot modpar self ovpn_dev tun3          # change ovpn device for iptables
+~~~
+
+to work correctly, ovpn_dev has to be the same, that is defined in .ovpn config file (parameter dev). 
+
 #### torstart
 
 start tor service automatically
@@ -193,14 +201,6 @@ start tor service automatically
 hotspot modpar hostapd torstart 1           # enable  torstart
 hotspot modpar hostapd torstart 0           # disable torstart
 ~~~
-
-adjust specific parameter
-
-~~~bash
-hotspot modpar self ovpn_dev tun3           # change ovpn device for iptables
-~~~
-
-to work correctly, ovpn_dev has to be the same, that is defined in .ovpn config file (parameter dev).    
 
 #### useiptables
 
