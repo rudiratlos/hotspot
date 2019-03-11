@@ -153,6 +153,7 @@ hotspot modpar \<dnsmasq|hostapd\> \<name\> [value]
 file selector:
 dnsmasq                 /etc/dnsmasq.conf
 hostapd                 /etc/hostapd/hostapd.conf
+self                    /usr/local/sbin/hotspot
 
 name			parameter name
 value			parameter value
@@ -193,6 +194,14 @@ hotspot modpar hostapd torstart 1           # enable  torstart
 hotspot modpar hostapd torstart 0           # disable torstart
 ~~~
 
+adjust specific parameter
+
+~~~bash
+hotspot modpar self ovpn_dev tun3           # change ovpn device for iptables
+~~~
+
+to work correctly, ovpn_dev has to be the same, that is defined in .ovpn config file (parameter dev).    
+
 #### useiptables
 
 hotspot script will look for file content ***#useiptables=1*** or ***#useiptables=0*** and will execute **iptables** commands for activation and deactivation.
@@ -206,9 +215,9 @@ hotspot modpar hostapd useiptables 0        # no iptable commands
 
 start or stop openvpn **experimental**\
 requires following files:\
-  config: /etc/openvpn/client/openvpn.ovpn\
-  passwd: /etc/openvpn/client/openvpn.pwd\
-pls. see ***ovpnstart*** parameter for automatic starting openvpn
+  config: /etc/openvpn/client/hotspot.ovpn\
+  passwd: /etc/openvpn/client/hotspot.pwd\
+pls. see ***ovpnstart*** parameter for automatic starting openvpn and modifying parameter
 
 ~~~bash
 hotspot ovpn start                          # start tor service
