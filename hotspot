@@ -17,6 +17,7 @@ wle_dev=""
 ap_dev="ap0"
 ap_devmac="b8:27:eb:00:00:00"
 ap_net="10.3.141"
+ap_devext="$eth_dev"
 ns_dom="local"
 #
 ap_ip="${ap_net}.1"
@@ -58,6 +59,7 @@ function Show_Defines {
   echo `date +"%Y-%m-%d %T"` "hs_try:$hs_try $wle_dev avail: $wle_avail"
   echo `date +"%Y-%m-%d %T"` "wli_dev:$wli_dev wli_devs: $wli_devs"
   echo `date +"%Y-%m-%d %T"` "wle_dev:$wle_dev wle_devs: $wle_devs"
+  echo `date +"%Y-%m-%d %T"` "apdvext:$ap_devext"
 }
 
 function Hotspot_Defines {
@@ -69,6 +71,7 @@ function Hotspot_Defines {
     wle_avail="yes"
     wle_ip=`ip addr show dev "$wle_dev" 2>/dev/null   | awk '/inet / { print $2 }'`
     wle_subn=`ip addr show dev "$wle_dev" 2>/dev/null | awk '/inet / { print $4 }'`
+    if [ "$eth_ip" == "" ]; then ap_devext="$wle_dev"; fi
   fi
   if [ "$eth_subn" != "$ap_subn" ] && { [ "$wle_avail" == "yes" ] || [ "$eth_subn" == "$wli_subn" ] || [ "$wli_subn" == "" ]; }; then hs_try="yes"; fi
 # Show_Defines
@@ -106,7 +109,7 @@ function Mod_Para {
 }
 
 function ipt_cln {
-  logger -s -t $snam "  IPtables $1 $2"
+  logger -s -t $snam "  IPTable $1 $2"
   iptables -t nat -F
   iptables -t mangle -F
   iptables -t nat -X
@@ -118,25 +121,28 @@ function ipt_cln {
 }
 
 function ipt_acc_all {
-  logger -s -t $snam "  IPtables accept all"
+  logger -s -t $snam "  IPTable accept all"
   iptables -P INPUT   ACCEPT
   iptables -P OUTPUT  ACCEPT
   iptables -P FORWARD ACCEPT
 }
 
 function ipt_ap {
+  logger -s -t $snam "  IPTable ap   $1 $ap_devext $ap_dev $ap_iptsubn"
   iptables -t nat $1 POSTROUTING -s $ap_iptsubn ! -d $ap_iptsubn -j MASQUERADE
-  iptables $1 FORWARD -i $eth_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
-  iptables $1 FORWARD -i $ap_dev -o $eth_dev -j ACCEPT
+  iptables $1 FORWARD -i $ap_devext -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
+  iptables $1 FORWARD -i $ap_dev -o $ap_devext -j ACCEPT
 }
 
 function ipt_ovpn {
+  logger -s -t $snam "  IPTable ovpn $1 $ovpn_dev $ap_dev"
   iptables -t nat $1 POSTROUTING -o $ovpn_dev -j MASQUERADE
   iptables $1 FORWARD -i $ovpn_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
   iptables $1 FORWARD -i $ap_dev -o $ovpn_dev -j ACCEPT
 }
 
 function ipt_tor {
+  logger -s -t $snam "  IPTable tor  $1 $ap_dev (using ports 22 53 9040)"
   iptables -t nat $1 PREROUTING -i $ap_dev -p tcp --dport 22 -j REDIRECT --to-ports 22
   iptables -t nat $1 PREROUTING -i $ap_dev -p udp --dport 53 -j REDIRECT --to-ports 53
   iptables -t nat $1 PREROUTING -i $ap_dev -p tcp --syn -j REDIRECT --to-ports 9040
@@ -144,7 +150,7 @@ function ipt_tor {
 
 function ipt_do {
   if [ "$1" == "add" ] || [ "$1" == "del" ]; then
-    logger -s -t $snam "  IPtables $1 $2"
+    logger -s -t $snam "  IPTable $1 $2"
     if [ "$1" == "add" ];  then opt="-A"; else opt="-D"; fi
     if [ "$2" == "tor" ];  then ipt_tor  "$opt"; fi
     if [ "$2" == "ovpn" ]; then ipt_ovpn "$opt"; fi
@@ -153,7 +159,7 @@ function ipt_do {
     if [ "$1" == "cln" ]; then
       ipt_cln "$1" "$2"
     else
-      logger -s -t $snam "  IPtables invalid option $1"
+      logger -s -t $snam "  IPTable invalid option $1"
     fi
   fi
 }
