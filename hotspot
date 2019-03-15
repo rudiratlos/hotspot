@@ -161,17 +161,14 @@ function ipt_do {
     if [ "$2" == "ovpn" ]; then ipt_ovpn "$opt"; fi
     if [ "$2" == "ap" ];   then ipt_ap   "$opt"; fi
   else
-    if [ "$1" == "cln" ]; then
-      ipt_cln "$1" "$2"
-    else
-      logger -s -t $snam "  IPTable invalid option $1"
-    fi
+    logger -s -t $snam "  IPTable invalid option $1"
   fi
 }
 
 function ipt_wipe {
   if [ "`grep -c -F "wipeiptables=1" "$hostapdf"`" -gt "0" ]; then
     ipt_cln "wipe" "$2"
+    ipt_chains
   fi
 }
 function ipt_use {
@@ -229,12 +226,12 @@ function wlan {
 
 function do_iptab {
   case "$1" in
-        plain)
+        wipe)
             ipt_cln "flush"
             ipt_chains
             ;;
         *)
-            echo "Usage: $snam ipt plain"
+            echo "Usage: $snam ipt wipe"
             exit 1
   esac
 }
@@ -243,14 +240,14 @@ function do_ovpn {
   case "$1" in
         start)
             logger -s -t $snam "  start   openvpn (experimental)"
-            ipt_use "del" "ap"
-            ipt_use "add" "ovpn"
+            ipt_do "del" "ap"
+            ipt_do "add" "ovpn"
             openvpn $ovpn_opt &
             ;;
         stop)
             logger -s -t $snam "  stop    openvpn (experimental)"
             killall openvpn
-            ipt_use "del" "ovpn"
+            ipt_do "del" "ovpn"
             ;;
         *)
             echo "Usage: $snam ovpn start|stop"
@@ -262,14 +259,14 @@ function do_tor {
   case "$1" in
         start)
             logger -s -t $snam "  start   tor (experimental)"
-            ipt_use "del" "ap"
-            ipt_use "add" "tor"
+            ipt_do "del" "ap"
+            ipt_do "add" "tor"
             service tor restart
             ;;
         stop)
             logger -s -t $snam "  stop    tor (experimental)"
             service tor stop
-            ipt_use "del" "tor"
+            ipt_do "del" "tor"
             ;;
         *)
             echo "Usage: $snam tor start|stop"
@@ -343,7 +340,7 @@ function Hotspot_Start {
   inst_ap_dev $wli_dev
   sleep 5
   ipt_wipe "cln" "ap"
-  ipt_use  "add" "ap"
+  ipt_do   "add" "ap"
   logger -s -t $snam "  start   hostapd restart"
   systemctl restart  hostapd
 # if [ "$apsta" == "yes" ]; then ip link set $wli_dev up; fi
@@ -351,17 +348,17 @@ function Hotspot_Start {
   systemctl restart dnsmasq
   logger -s -t $snam "started   hotspot"
 
+  if [ "`grep -c -F "ovpnstart=1" "$hostapdf"`" -gt "0" ]; then
+    do_ovpn start
+  else
+    if [ "`grep -c -F "torstart=1" "$hostapdf"`" -gt "0" ]; then
+      do_tor start
+    fi
+  fi
+
   if [ "`grep -c -F "nodogsplashstart=1" "$hostapdf"`" -gt "0" ]; then
     logger -s -t $snam "start     captive portal (nodogsplash)"
     nodogsplash
-  fi
-
-  if [ "`grep -c -F "ovpnstart=1" "$hostapdf"`" -gt "0" ]; then
-    do_ovpn start
-  fi
-
-  if [ "`grep -c -F "torstart=1" "$hostapdf"`" -gt "0" ]; then
-    do_tor start
   fi
 }
 
@@ -390,7 +387,7 @@ function Hotspot_Stop {
   logger -s -t $snam "  stop       dnsmasq"
   systemctl stop dnsmasq
   echo 0 > /proc/sys/net/ipv4/ip_forward
-  ipt_use "del" "ap"
+  ipt_do "del" "ap"
   sleep 2
   if [ "$1" != "nowlan" ]; then
     wlan start $wli_dev
@@ -406,7 +403,7 @@ function Hotspot_Setup {
   echo `date +"%Y-%m-%d %T"` "Setup  Hotspot $1 $2 ..."
   if [ "$1" != "noswpkg" ]; then
     echo `date +"%Y-%m-%d %T"` "install sw packages"
-    apt-get -qy install iw hostapd dnsmasq tor openvpn
+    apt-get -qy install iw iptables hostapd dnsmasq tor openvpn
   fi
 # disable/stop services. starting by script if needed
   systemctl disable dnsmasq.service >/dev/null 2>&1
@@ -660,7 +657,7 @@ case "$opt1" in
             Hotspot_Status
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [plain] | tor [start|stop] | ovpn [start|stop] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | wlan start|stop [$wli_dev|$wle_dev]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [wipe] | tor [start|stop] | ovpn [start|stop] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | wlan start|stop [$wli_dev|$wle_dev]"
   exit 1
 esac
 
