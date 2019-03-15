@@ -120,8 +120,8 @@ function ipt_cln {
   iptables -X
 }
 
-function ipt_acc_all {
-  logger -s -t $snam "  IPTable accept all"
+function ipt_chains {
+  logger -s -t $snam "  IPTable chains"
   iptables -P INPUT   ACCEPT
   iptables -P OUTPUT  ACCEPT
   iptables -P FORWARD ACCEPT
@@ -224,14 +224,12 @@ function wlan {
 
 function do_iptab {
   case "$1" in
-        flush)
+        plain)
             ipt_cln "flush"
-            ;;
-        accall)
-            ipt_acc_all
+            ipt_chains
             ;;
         *)
-            echo "Usage: $snam ipt flush|accall"
+            echo "Usage: $snam ipt plain"
             exit 1
   esac
 }
@@ -395,6 +393,7 @@ function Hotspot_Stop {
   fi
   logger -s -t $snam "  link    down dev $ap_dev"
   stop_ap_dev "$ap_dev"
+  iw dev $ap_dev del
   logger -s -t $snam "stopped   hotspot"
 }
 
@@ -656,7 +655,7 @@ case "$opt1" in
             Hotspot_Status
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [flush|accall] | tor [start|stop] | ovpn [start|stop] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | wlan start|stop [$wli_dev|$wle_dev]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [plain] | tor [start|stop] | ovpn [start|stop] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | wlan start|stop [$wli_dev|$wle_dev]"
   exit 1
 esac
 
