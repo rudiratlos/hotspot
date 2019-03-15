@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.916"
+hotspotver="V0.917"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -105,25 +105,67 @@ function Mod_Para {
   fi
 }
 
-function clear_iptables {
-  iptables -F
+function ipt_cln {
+  logger -s -t $snam "  IPtables $1 $2"
   iptables -t nat -F
+  iptables -t mangle -F
+  iptables -t nat -X
+  iptables -t mangle -X
+  iptables -t raw -F
+  iptables -t raw -X
+  iptables -F
   iptables -X
 }
 
-function use_iptables {
-  if [ "`grep -c -F "useiptables=1" "$hostapdf"`" -gt "0" ]; then
-    if [ "$1" == "add" ] || [ "$1" == "del" ]; then
-      logger -s -t $snam "  IPtables $1"
-      if [ "$1" == "add" ]; then opt="-A"; else opt="-D"; fi
-      iptables -t nat $opt POSTROUTING -s $ap_iptsubn ! -d $ap_iptsubn -j MASQUERADE
-      iptables $opt FORWARD -i $eth_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
-      iptables $opt FORWARD -i $ap_dev -o $eth_dev -j ACCEPT
-# Tor proxy
-#     iptables -t nat $opt PREROUTING -i $ap_dev -p tcp --syn -j REDIRECT --to-ports 9040
+function ipt_acc_all {
+  logger -s -t $snam "  IPtables accept all"
+  iptables -P INPUT   ACCEPT
+  iptables -P OUTPUT  ACCEPT
+  iptables -P FORWARD ACCEPT
+}
+
+function ipt_ap {
+  iptables -t nat $1 POSTROUTING -s $ap_iptsubn ! -d $ap_iptsubn -j MASQUERADE
+  iptables $1 FORWARD -i $eth_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
+  iptables $1 FORWARD -i $ap_dev -o $eth_dev -j ACCEPT
+}
+
+function ipt_ovpn {
+  iptables -t nat $1 POSTROUTING -o $ovpn_dev -j MASQUERADE
+  iptables $1 FORWARD -i $ovpn_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
+  iptables $1 FORWARD -i $ap_dev -o $ovpn_dev -j ACCEPT
+}
+
+function ipt_tor {
+  iptables -t nat $1 PREROUTING -i $ap_dev -p tcp --dport 22 -j REDIRECT --to-ports 22
+  iptables -t nat $1 PREROUTING -i $ap_dev -p udp --dport 53 -j REDIRECT --to-ports 53
+  iptables -t nat $1 PREROUTING -i $ap_dev -p tcp --syn -j REDIRECT --to-ports 9040
+}
+
+function ipt_do {
+  if [ "$1" == "add" ] || [ "$1" == "del" ]; then
+    logger -s -t $snam "  IPtables $1 $2"
+    if [ "$1" == "add" ];  then opt="-A"; else opt="-D"; fi
+    if [ "$2" == "tor" ];  then ipt_tor  "$opt"; fi
+    if [ "$2" == "ovpn" ]; then ipt_ovpn "$opt"; fi
+    if [ "$2" == "ap" ];   then ipt_ap   "$opt"; fi
+  else
+    if [ "$1" == "cln" ]; then
+      ipt_cln "$1" "$2"
     else
       logger -s -t $snam "  IPtables invalid option $1"
     fi
+  fi
+}
+
+function ipt_wipe {
+  if [ "`grep -c -F "wipeiptables=1" "$hostapdf"`" -gt "0" ]; then
+    ipt_cln "cln" "$2"
+  fi
+}
+function ipt_use {
+  if [ "`grep -c -F "useiptables=1" "$hostapdf"`" -gt "0" ]; then
+    ipt_do "$1" "$2"
   fi
 }
 
@@ -174,21 +216,32 @@ function wlan {
   esac
 }
 
+function do_iptab {
+  case "$1" in
+        flush)
+            ipt_cln "flush"
+            ;;
+        accall)
+            ipt_acc_all
+            ;;
+        *)
+            echo "Usage: $snam ipt flush|accall"
+            exit 1
+  esac
+}
+
 function do_ovpn {
   case "$1" in
         start)
             logger -s -t $snam "  start   openvpn (experimental)"
-            clear_iptables
-            iptables -t nat -A POSTROUTING -o $ovpn_dev -j MASQUERADE
-            iptables -A FORWARD -i $ovpn_dev -o ap0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-            iptables -A FORWARD -i ap0 -o $ovpn_dev -j ACCEPT
-
+            ipt_do "del" "ap"
+            ipt_do "add" "ovpn"
             openvpn $ovpn_opt &
             ;;
         stop)
             logger -s -t $snam "  stop    openvpn (experimental)"
             killall openvpn
-#           clear_iptables
+            ipt_do "del" "ovpn"
             ;;
         *)
             echo "Usage: $snam ovpn start|stop"
@@ -200,18 +253,14 @@ function do_tor {
   case "$1" in
         start)
             logger -s -t $snam "  start   tor (experimental)"
-            clear_iptables
-            iptables -t nat -A PREROUTING -i ap0 -p tcp --dport 22 -j REDIRECT --to-ports 22
-            iptables -t nat -A PREROUTING -i ap0 -p udp --dport 53 -j REDIRECT --to-ports 53
-            iptables -t nat -A PREROUTING -i ap0 -p tcp --syn -j REDIRECT --to-ports 9040
-
+            ipt_do "del" "ap"
+            ipt_do "add" "tor"
             service tor restart
             ;;
         stop)
             logger -s -t $snam "  stop    tor (experimental)"
             service tor stop
-            iptables -t nat -D PREROUTING -i ap0 -p tcp --syn -j REDIRECT --to-ports 9040
-#           clear_iptables
+            ipt_do "del" "tor"
             ;;
         *)
             echo "Usage: $snam tor start|stop"
@@ -284,7 +333,8 @@ function Hotspot_Start {
 # if [ "$apsta" == "yes" ]; then ip link set $wli_dev down; fi
   inst_ap_dev $wli_dev
   sleep 5
-  use_iptables add
+  ipt_wipe "cln" "ap"
+  ipt_do   "add" "ap"
   logger -s -t $snam "  start   hostapd restart"
   systemctl restart  hostapd
 # if [ "$apsta" == "yes" ]; then ip link set $wli_dev up; fi
@@ -331,7 +381,7 @@ function Hotspot_Stop {
   logger -s -t $snam "  stop       dnsmasq"
   systemctl stop dnsmasq
   echo 0 > /proc/sys/net/ipv4/ip_forward
-  use_iptables del
+  ipt_do "del" "ap"
   sleep 2
   if [ "$1" != "nowlan" ]; then
     wlan start $wli_dev
@@ -490,6 +540,7 @@ EOF
 #start#### do not remove next few lines ######
 #autostart=0
 #useiptables=0
+#wipeiptables=0
 #torstart=0
 #ovpnstart=0
 #nodogsplashstart=0
@@ -589,6 +640,9 @@ case "$opt1" in
        ovpn)
             do_ovpn       "$opt2"
             ;;
+       ipt)
+            do_iptab      "$opt2"
+            ;;
     version)
             echo "$hotspotver"
             ;;
@@ -596,7 +650,7 @@ case "$opt1" in
             Hotspot_Status
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | tor [start|stop] | ovpn [start|stop] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | wlan start|stop [$wli_dev|$wle_dev]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [flush|accall] | tor [start|stop] | ovpn [start|stop] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | wlan start|stop [$wli_dev|$wle_dev]"
   exit 1
 esac
 

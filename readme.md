@@ -202,13 +202,22 @@ hotspot modpar hostapd torstart 1           # enable  torstart
 hotspot modpar hostapd torstart 0           # disable torstart
 ~~~
 
-#### useiptables
+#### useiptables (not used anymore V0.917)
 
 hotspot script will look for file content ***#useiptables=1*** or ***#useiptables=0*** and will execute **iptables** commands for activation and deactivation.
 
 ~~~bash
 hotspot modpar hostapd useiptables 1        # executing iptable commands
 hotspot modpar hostapd useiptables 0        # no iptable commands
+~~~
+
+#### wipeiptables
+
+hotspot script will look for file content ***#wipeiptables=1*** at startup and will flush/wipe all rules before hotspot will set new rules.
+
+~~~bash
+hotspot modpar hostapd wipeiptables 1       # reset all rules
+hotspot modpar hostapd wipeiptables 0       # no rules wipeing
 ~~~
 
 ## openvpn
