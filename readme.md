@@ -203,7 +203,7 @@ hotspot modpar hostapd torstart 1           # enable  torstart
 hotspot modpar hostapd torstart 0           # disable torstart
 ~~~
 
-#### useiptables (not used anymore V0.917)
+#### useiptables
 
 hotspot script will look for file content ***#useiptables=1*** or ***#useiptables=0*** and will execute **iptables** commands for activation and deactivation.
 
