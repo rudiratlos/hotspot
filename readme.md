@@ -13,6 +13,7 @@ functions:
 - setup
 - setchan [channel]
 - syslog [lines]
+- ipt [flush|accall]
 - ovpn [start|stop]
 - tor [start|stop]
 - version
