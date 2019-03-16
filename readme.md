@@ -13,7 +13,7 @@ functions:
 - setup
 - setchan [channel]
 - syslog [lines]
-- ipt [flush|accall]
+- ipt [wipe]
 - ovpn [start|stop]
 - tor [start|stop]
 - version
@@ -174,7 +174,7 @@ During boot process /etc/rc.local will look for file content ***#autostart=1*** 
 
 ~~~bash
 hotspot modpar hostapd autostart 1          # enable  autostart
-hotspot modpar hostapd autostart 0          # disable autostart
+hotspot modpar hostapd autostart 0          # disable autostart (default)
 ~~~
 
 #### ovpnstart
@@ -183,7 +183,7 @@ start openvpn automatically
 
 ~~~bash
 hotspot modpar hostapd ovpnstart 1         # enable  ovpnstart
-hotspot modpar hostapd ovpnstart 0         # disable ovpnstart
+hotspot modpar hostapd ovpnstart 0         # disable ovpnstart (default)
 ~~~
 
 adjust specific openvpn parameter
@@ -200,16 +200,7 @@ start tor service automatically
 
 ~~~bash
 hotspot modpar hostapd torstart 1           # enable  torstart
-hotspot modpar hostapd torstart 0           # disable torstart
-~~~
-
-#### useiptables
-
-hotspot script will look for file content ***#useiptables=1*** or ***#useiptables=0*** and will execute **iptables** commands for activation and deactivation.
-
-~~~bash
-hotspot modpar hostapd useiptables 1        # executing iptable commands
-hotspot modpar hostapd useiptables 0        # no iptable commands
+hotspot modpar hostapd torstart 0           # disable torstart (default)
 ~~~
 
 #### wipeiptables
@@ -217,7 +208,7 @@ hotspot modpar hostapd useiptables 0        # no iptable commands
 hotspot script will look for file content ***#wipeiptables=1*** at startup and will flush/wipe all rules before hotspot will set new rules.
 
 ~~~bash
-hotspot modpar hostapd wipeiptables 1       # reset all rules
+hotspot modpar hostapd wipeiptables 1       # reset all rules (default)
 hotspot modpar hostapd wipeiptables 0       # no rules wipeing
 ~~~
 
@@ -231,7 +222,7 @@ pls. see ***ovpnstart*** parameter for automatic starting openvpn and modifying 
 
 ~~~bash
 hotspot ovpn start                          # start tor service
-hotspot ovpn stop                           # stop  tor service
+hotspot ovpn stop                           # stop  tor service (default)
 ~~~
 
 ## tor
@@ -279,7 +270,6 @@ root:# hotspot modpar hostapd ssid myHotspotID
 root:# hotspot modpar hostapd wpa_passphrase myHotspotPassword
 root:# hotspot modpar hostapd country SE
 root:# hotspot modpar hostapd autostart 1   # optional autostart enable
-root:# hotspot modpar hostapd useiptables 1 # optional
 
 root:# reboot                               # if autostart enable or use hotspot try
 ~~~
