@@ -1,5 +1,5 @@
 # hotspot
-
+ 
 shell script for setup and management of hotspot (hostapd) functions on rpi platform
 
 functions:

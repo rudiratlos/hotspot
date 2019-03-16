@@ -1,6 +1,6 @@
 #!/bin/bash
 set +e
-
+  
 hotspotver="V0.919"
 opt1="$1"
 opt2="$2"
