@@ -1,5 +1,5 @@
 # hotspot
- 
+
 shell script for setup and management of hotspot (hostapd) functions on rpi platform
 
 functions:
@@ -221,8 +221,8 @@ requires following files:\
 pls. see ***ovpnstart*** parameter for automatic starting openvpn and modifying parameter
 
 ~~~bash
-hotspot ovpn start                          # start tor service
-hotspot ovpn stop                           # stop  tor service (default)
+hotspot ovpn start                          # start openvpn service
+hotspot ovpn stop                           # stop  openvpn service (default)
 ~~~
 
 ## tor
