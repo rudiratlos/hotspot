@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
-  
-hotspotver="V0.919"
+
+hotspotver="V0.920"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -402,6 +402,7 @@ function Hotspot_Setup {
 # disable/stop services. starting by script if needed
   systemctl disable dnsmasq.service >/dev/null 2>&1
   systemctl stop    dnsmasq.service >/dev/null 2>&1
+  systemctl unmask  hostapd.service >/dev/null 2>&1
   systemctl disable hostapd.service >/dev/null 2>&1
   systemctl stop    hostapd.service >/dev/null 2>&1
   update-rc.d tor   disable >/dev/null 2>&1
