@@ -1,0 +1,87 @@
+#!/bin/bash
+# V0.1
+set +e
+snam="noderedsetup"
+
+# default params for hotspot
+hnam="pumpcentral"
+hpwd="hallohallo"
+#
+
+function ipt_flush {
+  logger -s -t $snam "  iptables flush"
+  iptables -t nat -F
+  iptables -t mangle -F
+  iptables -t nat -X
+  iptables -t mangle -X
+  iptables -t raw -F
+  iptables -t raw -X
+  iptables -F
+  iptables -X
+}
+
+function ipt_chains {
+  logger -s -t $snam "  iptables chains"
+  iptables -P INPUT   ACCEPT
+  iptables -P OUTPUT  ACCEPT
+  iptables -P FORWARD ACCEPT
+}
+
+function hostname_change {
+  if [ "$1" != "" ]; then
+    logger -s -t $snam "  set hostname to $1"
+    fil="/etc/hosts"
+    sed -r -i '/^127.0.1.1/d' $fil
+    echo -e "127.0.1.1 \t$1" >> $fil
+    /usr/bin/hostnamectl set-hostname $1
+  else
+    logger -s -t $snam "  ERR: hostname_change wrong param $1"
+  fi
+}
+
+function hotspot_setup {
+  if [ "$1" != "" ]; then
+    logger -s -t $snam "  hotspot setup"
+    sudo cp /usr/local/sbin/hotspot /usr/local/sbin/hotspot_old > /dev/null
+    sudo rm /usr/local/sbin/hotspot > /dev/null
+    wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot -O /usr/local/sbin/hotspot > /dev/null 2>&1
+    sudo chmod +x /usr/local/sbin/hotspot > /dev/null
+#   hotspot setup  noswpkg
+    hotspot setup
+    hotspot modpar hostapd ssid "$1"
+    hotspot modpar hostapd wpa_passphrase "$2"
+#   hotspot modpar hostapd country DE
+  else
+    logger -s -t $snam "  ERR: hotspot_setup wrong param $1 $2"
+  fi
+}
+
+function mqtt_setup {
+  logger -s -t $snam "  mqtt setup"
+  sudo apt install -y build-essential mosquitto mosquitto-clients
+  sudo systemctl enable mosquitto.service
+}
+
+function nodered_setup {
+# doc: https://nodered.org/docs/hardware/raspberrypi
+  logger -s -t $snam "  node-red setup (give 3x y)"
+  bash <(curl -sL https://raw.githubusercontent.com/node-red/raspbian-deb-package/master/resources/update-nodejs-and-nodered)
+  sudo systemctl enable nodered.service
+  sudo wget https://raw.githubusercontent.com/node-red/raspbian-deb-package/master/resources/nodered.service -O /lib/systemd/system/nodered.service > /dev/null 2>&1
+  sudo wget https://raw.githubusercontent.com/node-red/raspbian-deb-package/master/resources/node-red-start -O /usr/bin/node-red-start > /dev/null 2>&1
+  sudo wget https://raw.githubusercontent.com/node-red/raspbian-deb-package/master/resources/node-red-stop -O /usr/bin/node-red-stop > /dev/null 2>&1
+  sudo chmod +x /usr/bin/node-red-st* > /dev/null
+  sudo systemctl daemon-reload
+}
+
+logger -s -t $snam "  start install (required: fresh raspbian image)..."
+sudo apt-get -qy update
+sudo apt-get -qy install curl
+#ipt_flush
+#ipt_chains
+hostname_change "$hnam"
+hotspot_setup   "$hnam" "$hpwd"
+mqtt_setup
+nodered_setup
+logger -s -t $snam "  end   install..."
+logger -s -t $snam "if everything went well, pls. reboot"
