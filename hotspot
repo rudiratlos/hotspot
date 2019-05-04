@@ -9,7 +9,7 @@ opt4="$4"
 #
 snam="hotspot"
 eth_dev="eth0"
-# freq_filter: ""|"2"|"5" empty: 2 and 5 MHz
+# freq_filter: ""|"2"|"5" empty: 2 and 5 GHz
 freq_filter="2"
 # wl0_dev: on board wlan (e.g. wlan0)
 # wl1_dev: external wlan adaptor (optional)
