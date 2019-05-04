@@ -72,6 +72,7 @@ function nodered_setup {
   sudo wget https://raw.githubusercontent.com/node-red/raspbian-deb-package/master/resources/node-red-stop -O /usr/bin/node-red-stop > /dev/null 2>&1
   sudo chmod +x /usr/bin/node-red-st* > /dev/null
   sudo systemctl daemon-reload
+# npm i node-red/node-red-dashboard
 }
 
 logger -s -t $snam "  start install (required: fresh raspbian image)..."
