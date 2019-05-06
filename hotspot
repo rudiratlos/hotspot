@@ -11,19 +11,28 @@ snam="hotspot"
 eth_dev="eth0"
 # freq_filter: ""|"2"|"5" empty: 2 and 5 GHz
 freq_filter="2"
-ch_prio="3 1 6 11 14 34 38 46 54 62 102 110 118 126 134 142 151 159 42 58 106 122 138 155 50 114"
+# if defined, automatic discovery disabled
+ch_autofind="1"
+ch_dflt="11"
+# valid channels and selection prio
+ch_2GHz_ovrlap="2 3 4 5 7 8 9 10 12 13"
+ch_2GHz_022MHz="1 6 11"
+ch_5GHz_020MHz="32 36 40 44 48 52 56 60 64 100 104 108 112 116 120 124 128 132 136 140 144 149 153 157 161 165 169 173"
+ch_5GHz_040MHz="34 38 46 54 62 102 110 118 126 134 142 151 159"
+ch_5GHz_080MHz="42 58 106 122 138 155"
+ch_5GHz_160MHz="50 114"
+ch_prio=${ch_2GHz_ovrlap}" "${ch_2GHz_022MHz}" "${ch_5GHz_020MHz}" "${ch_5GHz_040MHz}" "${ch_5GHz_080MHz}" "${ch_5GHz_160MHz}
 # wl0_dev: on board wlan (e.g. wlan0)
 # wl1_dev: external wlan adaptor (optional)
-# if defined, automatic discovery disabled
 wl0_dev=""
 wl1_dev=""
-ch_autofind="1"
 ap_dev="ap0"
 ap_devmac="b8:27:eb:00:00:00"
 ap_net="10.3.141"
 ap_devext="$eth_dev"
 ns_dom="local"
 #
+ap_share="no"
 ap_ip="${ap_net}.1"
 ap_subn="${ap_net}.255"
 ap_ipanet="${ap_net}.1/24"
@@ -60,7 +69,7 @@ function Show_Defines {
   echo `date +"%Y-%m-%d %T"` "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
   echo `date +"%Y-%m-%d %T"` "wl0_dev:$wl0_dev wl0_subn:$wl0_subn wl0_ip:$wl0_ip"
   echo `date +"%Y-%m-%d %T"` "wl1_dev:$wl1_dev wl1_subn:$wl1_subn wl1_ip:$wl1_ip"
-  echo `date +"%Y-%m-%d %T"` "hs_try:$hs_try $wl1_dev avail: $wl1_avail"
+  echo `date +"%Y-%m-%d %T"` "ap_shar:$ap_share hs_try:$hs_try $wl1_dev avail: $wl1_avail"
   echo `date +"%Y-%m-%d %T"` "wl0_dev:$wl0_dev wl0_devs: $wl0_devs"
   echo `date +"%Y-%m-%d %T"` "wl1_dev:$wl1_dev wl1_devs: $wl1_devs"
   echo `date +"%Y-%m-%d %T"` "apdvext:$ap_devext"
@@ -280,6 +289,8 @@ function Find_Chan {
 # Find_Chan "wlan1" "11" "104" "5"
   chanw=""
   chflg=""
+  chvtc=""
+  chhtc=""
   if [ "$ch_autofind" -gt "0" ]; then
     if [ "$1" != "" ]; then
       fil="/tmp/$1_$4_scan.txt"
@@ -301,22 +312,6 @@ function Find_Chan {
           if [ "$ch_num" == "${ch_prio_arr[idx]}" ] && [ "$ch_use" -le "1" ]; then
             chanw="$ch_num"
 #           echo "found idx: $idx ch: $chanw use: $ch_use"
-            case "$chanw" in
-              1|6|14)
-                chflg="MHz22"
-                ;;
-              3|11|34|38|46|54|62|102|110|118|126|134|142|151|159)
-                chflg="MHz40"
-                ;;
-              42|58|106|122|138|155)
-                chflg="MHz80"
-                ;;
-              50|114)
-                chflg="MHz160"
-                ;;
-              *)
-                chflg=""
-            esac
           fi
           idx=$(($idx+1))
         done
@@ -326,21 +321,18 @@ function Find_Chan {
     chanw="$3"
   fi
   if [ "$chanw" == "" ]; then chanw="$2"; fi
-  if [ "$chanw" == "" ]; then chanw="11"; fi
+  if [ "$chanw" == "" ]; then chanw="$ch_dflt"; fi
 }
 
 function Mdfy_Chan {
   logger -s -t $snam "  modify  channel strategy: $1 $2 $3"
-  if [ "$2" != "" ]; then
-    ch="$2"
-  else
-    chan2ghz="6"
-    chan5ghz="36"
-    hf=`iw phy | grep -ciF "VHT Capabilities"`
-    if [ "$hf" -ge "1" ]; then ch="$chan5ghz"; else ch="$chan2ghz"; fi
+  ch="$2"
+  if [ "$ch" == "" ]; then
+    ch="$ch_dflt"
+    logger -s -t $snam "  using   default chan $ch"
   fi
   if [ "$ch" -le "14" ]; then hm="g"; else hm="a"; fi
-  if [ "$ch" -gt "48" ]; then att="$ch (can cause problem)"; else att="$ch"; fi
+  if [ "$ch" -ge "32" ]; then att="$ch (can cause problem)"; else att="$ch"; fi
   logger -s -t $snam "  select  hw_mode $hm  chan $att"
   Mod_Para "hostapd" "channel" "$ch"
   Mod_Para "hostapd" "hw_mode" "$hm"
@@ -353,13 +345,11 @@ function Hotspot_Start {
   logger -s -t $snam "  WLANint $wl0_dev   $wl0_ip"
   logger -s -t $snam "  WLANext $wl1_dev   $wl1_ip"
   chanh=`cat "$hostapdf" | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
-  if [ "$wl1_avail" == "yes" ] || [ "$eth_ip" != "" ] || [ "yes" == "yes" ]; then
-    apsta="no"
-    Find_Chan "$wl0_dev" "11" "$chanh" "$freq_filter"
+  if [ "$ap_share" != "yes" ] && { [ "$wl1_avail" == "yes" ] || [ "$eth_ip" != "" ]; }; then
+    Find_Chan "$wl0_dev" "$ch_dflt" "$chanh" "$freq_filter"
     logger -s -t $snam "  FndChan suggest channel $chanw"
     msg="select channel for ap mode"
   else
-    apsta="yes"
     chanw=`iwlist $wl0_dev channel | awk '/urrent / { print $5 }' | sed 's/)//g'`
     msg="select same channel for ap & station mode"
     logger -s -t $snam "  UseChan channel $chanw"
@@ -373,19 +363,16 @@ function Hotspot_Start {
   logger -t $snam "  stop    dnsmasq"
   systemctl stop dnsmasq
   echo 1 > /proc/sys/net/ipv4/ip_forward
-# if [ "$apsta" == "yes" ]; then ip link set $wl0_dev down; fi
   inst_ap_dev $wl0_dev
-  sleep 5
+  sleep 1
   ipt_wipe "cln" "ap"
   ipt_do   "add" "ap"
   logger -s -t $snam "  start   hostapd restart"
   systemctl restart  hostapd
-# if [ "$apsta" == "yes" ]; then ip link set $wl0_dev up; fi
   logger -s -t $snam "  start   dnsmasq"
   systemctl restart dnsmasq
   logger -s -t $snam "started   hotspot"
 
-  killall openvpn
   if [ "`grep -c -F "ovpnstart=1" "$hostapdf"`" -gt "0" ]; then
     do_ovpn start
   else
@@ -402,19 +389,23 @@ function Hotspot_Start {
 
 function Hotspot_Try {
   logger -s -t $snam "trying    hotspot"
-  sleep 20     # let wlan settle
+  sleep 5     # let wlan settle
   Hotspot_Defines
-  if [ "$hs_try" == "yes" ]; then
+  if [ "$hs_try" == "yes" ] && [ "$ap_share" != "yes" ]; then
     logger -s -t $snam "  try     hotspot"
     Hotspot_Start nowlan
   else
-    if [ "$wl0_subn" != "" ] && [ "$wl0_subn" != "$ap_subn" ]; then
-      logger -s -t $snam "  ap&sta  on $wl0_dev start hotspot in parallel to station mode"
-      logger -s -t $snam "  (not supported, use eth0 or additional usb wlan adaptor wlan1)"
-#     logger -s -t $snam "  starting hotspot, maybe this will fail"
-#     Hotspot_Start wlan
+    if [ "$ap_share" == "yes" ]; then
+      if [ "$wl0_subn" != "" ] && [ "$wl0_subn" != "$ap_subn" ]; then
+        logger -s -t $snam "  ap&sta  on $wl0_dev start hotspot in parallel to station mode"
+        logger -s -t $snam "  (not supported, use eth0 or additional usb wlan adaptor wlan1)"
+#       logger -s -t $snam "  starting hotspot, maybe this will fail"
+        Hotspot_Start wlan
+      else
+        logger -s -t $snam "  ERROR   subnet conflict $eth_dev $eth_subn $wl0_dev $wl0_subn $ap_dev $ap_subn"
+      fi
     else
-      logger -s -t $snam "  ERROR   subnet conflict $eth_dev $eth_subn $wl0_dev $wl0_subn $ap_dev $ap_subn"
+      logger   -s -t $snam "  PARAM   ap_share not set to yes"
     fi
   fi
 }
@@ -448,6 +439,8 @@ function Hotspot_Setup {
 # disable/stop services. starting by script if needed
   systemctl disable dnsmasq.service >/dev/null 2>&1
   systemctl stop    dnsmasq.service >/dev/null 2>&1
+  systemctl disable openvpn.service >/dev/null 2>&1
+  systemctl stop    openvpn.service >/dev/null 2>&1
   systemctl unmask  hostapd.service >/dev/null 2>&1
   systemctl disable hostapd.service >/dev/null 2>&1
   systemctl stop    hostapd.service >/dev/null 2>&1
