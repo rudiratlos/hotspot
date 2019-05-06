@@ -1,11 +1,17 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.922"
+hotspotver="V0.923"
 opt1="$1"
 opt2="$2"
 opt3="$3"
 opt4="$4"
+#
+autostart="yes"
+wipeiptables="yes"
+torstart="no"
+ovpnstart="no"
+nodogsplashstart="no"
 #
 snam="hotspot"
 eth_dev="eth0"
@@ -176,7 +182,7 @@ function ipt_do {
 }
 
 function ipt_wipe {
-  if [ "`grep -c -F "wipeiptables=1" "$hostapdf"`" -gt "0" ]; then
+  if [ "$wipeiptables" == "yes" ]; then
     ipt_cln "wipe" "$2"
     ipt_chains
   fi
@@ -373,15 +379,13 @@ function Hotspot_Start {
   systemctl restart dnsmasq
   logger -s -t $snam "started   hotspot"
 
-  if [ "`grep -c -F "ovpnstart=1" "$hostapdf"`" -gt "0" ]; then
+  if [ "$ovpnstart" == "yes" ]; then
     do_ovpn start
   else
-    if [ "`grep -c -F "torstart=1" "$hostapdf"`" -gt "0" ]; then
-      do_tor start
-    fi
+    if [ "$torstart" == "yes" ]; then do_tor start; fi
   fi
 
-  if [ "`grep -c -F "nodogsplashstart=1" "$hostapdf"`" -gt "0" ]; then
+  if [ "$nodogsplashstart" == "yes" ]; then
     logger -s -t $snam "start     captive portal (nodogsplash)"
     nodogsplash
   fi
@@ -459,9 +463,8 @@ function Hotspot_Setup {
 #file autocreated, do not edit
 #
 
-if [ "\`grep -c -F "autostart=1" "/etc/hostapd/hostapd.conf"\`" -gt "0" ]; then
-  hotspot try >/tmp/hotspot.log 2>&1
-fi
+hsm=\$(hotspot startmode 2>/dev/null)
+if [ "\$hsm" = "yes" ]; then hotspot try >/tmp/hotspot.log 2>&1; fi
 
 # Print the IP address
 _IP=\$(hostname -I) || true
@@ -578,14 +581,6 @@ EOF
   fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil (pls. adjust SSID, PWD and country code)"
   cat <<EOF > "$fil"
-#start#### do not remove next few lines ######
-#autostart=0
-#wipeiptables=1
-#torstart=0
-#ovpnstart=0
-#nodogsplashstart=0
-#end###### used by hotspot script ############
-
 ctrl_interface=/var/run/hostapd
 ctrl_interface_group=0
 interface=ap0
@@ -620,7 +615,7 @@ logger_stdout=-1
 logger_stdout_level=4
 EOF
   Mdfy_Chan "select default channel"
-  Mod_Para  "hostapd" "autostart" "1"
+  Mod_Para  "self" "autostart" "yes"
   chmod 640 "$fil"
 
   fil="/etc/tor/torrc"
@@ -690,6 +685,9 @@ case "$opt1" in
             ;;
     version)
             echo "$hotspotver"
+            ;;
+    startmode)
+            echo "$autostart"
             ;;
      status)
             Hotspot_Status

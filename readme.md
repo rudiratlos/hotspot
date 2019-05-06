@@ -124,7 +124,7 @@ hotspot stop
 executes following hotspot sequence:
 
 - hotspot stop nowlan
-- sleep 20 seconds (settling time)
+- sleep some seconds (settling time)
 - hotspot start
 
 ~~~bash
@@ -136,7 +136,7 @@ hotspot restart
 executes following hotspot sequence:
 
 - hotspot stop nowlan
-- sleep 20 seconds (settling time)
+- sleep some seconds (settling time)
 - hotspot try
 
 ~~~bash
@@ -162,19 +162,19 @@ value			parameter value
 
 examples:
 ~~~bash
-hotspot modpar hostapd ssid myHotspotID     # set parameter ssid=myHotspotID
-hotspot modpar hostapd country_code DE      # set parameter country_code=DE
+hotspot modpar hostapd ssid myHotspotID      # set parameter ssid=myHotspotID
+hotspot modpar hostapd country_code DE       # set parameter country_code=DE
 ~~~
 
 ### special hostapd parameter
 
 #### autostart
 
-During boot process /etc/rc.local will look for file content ***#autostart=1*** and will execute **hotspot try** command.
+During boot process /etc/rc.local will look for file content ***autostart="yes"*** in /usr/local/sbin/hotspot and will execute **hotspot try** command.
 
 ~~~bash
-hotspot modpar hostapd autostart 1          # enable  autostart
-hotspot modpar hostapd autostart 0          # disable autostart (default)
+hotspot modpar self autostart yes            # enable  autostart
+hotspot modpar self autostart no             # disable autostart (default)
 ~~~
 
 #### ovpnstart
@@ -182,14 +182,14 @@ hotspot modpar hostapd autostart 0          # disable autostart (default)
 start openvpn automatically
 
 ~~~bash
-hotspot modpar hostapd ovpnstart 1         # enable  ovpnstart
-hotspot modpar hostapd ovpnstart 0         # disable ovpnstart (default)
+hotspot modpar self ovpnstart yes           # enable  ovpnstart
+hotspot modpar self ovpnstart no            # disable ovpnstart (default)
 ~~~
 
 adjust specific openvpn parameter
 
 ~~~bash
-hotspot modpar self ovpn_dev tun3          # change ovpn device for iptables
+hotspot modpar self ovpn_dev tun3           # change ovpn device for iptables
 ~~~
 
 to work correctly, ovpn_dev has to be the same, that is defined in .ovpn config file (parameter dev). 
@@ -199,17 +199,17 @@ to work correctly, ovpn_dev has to be the same, that is defined in .ovpn config 
 start tor service automatically
 
 ~~~bash
-hotspot modpar hostapd torstart 1           # enable  torstart
-hotspot modpar hostapd torstart 0           # disable torstart (default)
+hotspot modpar self torstart yes            # enable  torstart
+hotspot modpar self torstart no             # disable torstart (default)
 ~~~
 
 #### wipeiptables
 
-hotspot script will look for file content ***#wipeiptables=1*** at startup and will flush/wipe all rules before hotspot will set new rules.
+hotspot script will look for file content ***wipeiptables="yes"*** at startup and will flush/wipe all rules before hotspot will set new rules.
 
 ~~~bash
-hotspot modpar hostapd wipeiptables 1       # reset all rules (default)
-hotspot modpar hostapd wipeiptables 0       # no rules wipeing
+hotspot modpar self wipeiptables yes        # reset all rules (default)
+hotspot modpar self wipeiptables no         # no rules wipeing
 ~~~
 
 ## openvpn
@@ -269,7 +269,7 @@ root:# hotspot setup
 root:# hotspot modpar hostapd ssid myHotspotID 
 root:# hotspot modpar hostapd wpa_passphrase myHotspotPassword
 root:# hotspot modpar hostapd country SE
-root:# hotspot modpar hostapd autostart 1   # optional autostart enable
+root:# hotspot modpar self autostart yes    # optional autostart enable
 
 root:# reboot                               # if autostart enable or use hotspot try
 ~~~
