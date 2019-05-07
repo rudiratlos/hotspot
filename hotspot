@@ -210,7 +210,7 @@ function inst_ap_dev {
     fi
     apipn=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $2 }'`
     if [ "$apipn" == "$ap_ipanet" ]; then
-      logger -s -t $snam "  install dev $ap_dev done"
+      logger -s -t $snam "  install dev $ap_dev on $wdev done"
     else
       logger -s -t $snam "  ERROR:  install dev $ap_dev"
     fi
@@ -357,7 +357,7 @@ function Hotspot_Start {
     msg="select channel for ap mode"
   else
     chanw=`iwlist $wl0_dev channel | awk '/urrent / { print $5 }' | sed 's/)//g'`
-    msg="select same channel for ap & station mode"
+    msg="select same channel for ap & station mode on $wl0_dev"
     logger -s -t $snam "  UseChan channel $chanw"
   fi
   if [ "$chanw" != "" ]; then
@@ -389,6 +389,10 @@ function Hotspot_Start {
     logger -s -t $snam "start     captive portal (nodogsplash)"
     nodogsplash
   fi
+  msg="`service hostapd status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
+  logger -s -t $snam "hostapd   $msg"
+  msg="`service dnsmasq status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
+  logger -s -t $snam "dnsmasq   $msg"
 }
 
 function Hotspot_Try {
@@ -520,9 +524,7 @@ dhcp-reply-delay=tag:client_is_a_pi,2
 
 # Never forward plain names (without a dot or domain part)
 domain-needed
-no-dhcp-interface=eth0,wlan0
-listen-address=$ap_ip
-listen-address=127.0.0.1
+interface=ap0
 bind-interfaces
 
 #==========[ NAMESERVER ]==========#
