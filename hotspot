@@ -71,7 +71,8 @@ hostn="`hostname`"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
-spot_cntry2="DE"
+spot_cntry2="`locale | awk -F"[_.]" '/LANG=/{print $2}'`"
+if [ "$spot_cntry2" == "" ]; then spot_cntry2="DE"; fi
 #
 ovpncfg="/etc/openvpn/client/hotspot.ovpn"
 ovpnpwd="/etc/openvpn/client/hotspot.pwd"
@@ -603,7 +604,7 @@ EOF
 
   fil="/etc/hostapd/hostapd.conf"
   fil_bck "$fil" "$bckext"
-  echo `date +"%Y-%m-%d %T"` "create $fil (pls. adjust SSID, PWD and country code)"
+  echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
 ctrl_interface=/var/run/hostapd
 ctrl_interface_group=0
@@ -638,7 +639,12 @@ logger_syslog_level=4
 logger_stdout=-1
 logger_stdout_level=4
 EOF
+  echo `date +"%Y-%m-%d %T"` "$snam:   setting default (pls. adjust ssid, wpa_passphrase, country_code and REGDOMAIN)"
   Mdfy_Chan "select default channel"
+  Mod_Para  "hostapd" "ssid" "$spot_ssid"
+  Mod_Para  "hostapd" "wpa_passphrase" "$spot_psk"
+  Mod_Para  "hostapd" "country_code" "$spot_cntry2"
+  Mod_Para  "crda"    "REGDOMAIN"    "$spot_cntry2"
   Mod_Para  "self" "autostart" "yes"
   chmod 640 "$fil"
 
