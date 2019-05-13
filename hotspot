@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.924"
+hotspotver="V0.925"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -66,17 +66,22 @@ wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
 hostapdf="/etc/hostapd/hostapd.conf"
 dnsmasqf="/etc/dnsmasq.conf"
 crdaf="/etc/default/crda"
-ovpncfg="/etc/openvpn/client/hotspot.ovpn"
-ovpnpwd="/etc/openvpn/client/hotspot.pwd"
+torcfg="/etc/tor/torrc"
 hostn="`hostname`"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
 spot_cntry2="DE"
 #
+ovpncfg="/etc/openvpn/client/hotspot.ovpn"
+ovpnpwd="/etc/openvpn/client/hotspot.pwd"
 ovpn_dev="`cat $ovpncfg | grep "dev" | awk -F " " '{print $2}'`"
 if [ "$ovpn_dev" == "" ]; then ovpn_dev="tun0"; fi
-ovpn_opt="--config $ovpncfg --auth-user-pass $ovpnpwd"
+if [ "$ovpnpwd" == "" ]; then
+  ovpn_opt="--config $ovpncfg"
+else
+  ovpn_opt="--config $ovpncfg --auth-user-pass $ovpnpwd"
+fi
 
 function Show_Defines {
   echo `date +"%Y-%m-%d %T"` "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
@@ -125,12 +130,13 @@ function Mod_Para {
   if [ "$1" == "crda" ];    then cfil="$crdaf"; fi
   if [ "$1" == "ovpncfg" ]; then cfil="$ovpncfg"; fi
   if [ "$1" == "ovpnpwd" ]; then cfil="$ovpnpwd"; fi
+  if [ "$1" == "torcfg" ];  then cfil="$torcfg"; fi
   if [ "$1" == "self" ];    then cfil="$0"; fi
   if [ "$cfil" != "file_not_valid" ]; then
     logger -s -t $snam "  change  $1 $2 $3 ($cfil)"
     case "$1" in
       ovpnpwd) echo -e "$2\n$3" > $cfil ;;
-      ovpncfg) sed -i -r "s/$2[ ]* .*/$2 $3/g" "$cfil" ;;
+      ovpncfg|torcfg) sed -i -r "s/$2[ ]* .*/$2 $3/g" "$cfil" ;;
       self) sed -i -r "s/$2[ ]*=.*/$2=\"$3\"/g" "$cfil" ;;
       *) sed -i -r "s/$2[ ]*=.*/$2=$3/g" "$cfil" ;;
     esac
@@ -538,7 +544,9 @@ dhcp-reply-delay=tag:client_is_a_pi,2
 
 # Never forward plain names (without a dot or domain part)
 domain-needed
-interface=$ap_dev
+no-dhcp-interface=eth0,wlan0
+listen-address=$ap_ip
+listen-address=127.0.0.1
 bind-interfaces
 
 #==========[ NAMESERVER ]==========#
@@ -634,7 +642,7 @@ EOF
   Mod_Para  "self" "autostart" "yes"
   chmod 640 "$fil"
 
-  fil="/etc/tor/torrc"
+  fil="$torcfg"
   fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
