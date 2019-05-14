@@ -76,10 +76,10 @@ next commands will create all config files and adjusts parameter to your environ
 
 ~~~bash
 hotspot setup
-hotspot modpar hostapd ssid myHotspotID 
-hotspot modpar hostapd wpa_passphrase myHotspotPassword
-hotspot modpar hostapd country SE
-hotspot modpar crda    country SE
+hotspot modpar self ssid myHotspotID 
+hotspot modpar self wpa_passphrase myHotspotPassword
+hotspot modpar self country SE
+hotspot modpar crda REGDOMAIN SE
 
 hotspot try
 ~~~
@@ -267,10 +267,10 @@ root:# apt-get upgrade                      # optional
 
 root:# hotspot setup
 
-root:# hotspot modpar hostapd ssid myHotspotID 
-root:# hotspot modpar hostapd wpa_passphrase myHotspotPassword
-root:# hotspot modpar hostapd country SE
-root:# hotspot modpar crda    country SE
+root:# hotspot modpar self ssid myHotspotID 
+root:# hotspot modpar self wpa_passphrase myHotspotPassword
+root:# hotspot modpar self country SE
+root:# hotspot modpar crda REGDOMAIN SE
 root:# hotspot modpar self autostart yes    # optional autostart enable
 
 root:# reboot                               # if autostart enable or use hotspot try
