@@ -14,7 +14,7 @@ functions:
 - setchan [channel]
 - syslog [lines]
 - ipt [wipe]
-- ovpn [start|stop]
+- ovpn [start|stop|refresh]
 - tor [start|stop]
 - version
 - wlan [start|stop]
@@ -25,6 +25,8 @@ the on board ethernet port or an optional external usb wlan adaptor (e.g. EW-781
 for internet access.
 
 best wlan channel for hotspot functionality will be determined automatically by least used frequency spectrum.
+
+create .ovpn config files for free openvpn server taken from [https://www.vpngate.net](https://www.vpngate.net){target="_blank"} 
 
 actions will be logged to /tmp/hotspot and syslog\
 pls. see examples in troubleshooting section.
@@ -215,15 +217,17 @@ hotspot modpar self wipeiptables no         # no rules wipeing
 
 ## openvpn
 
-start or stop openvpn **experimental**\
-requires following files:\
-  config: /etc/openvpn/client/hotspot.ovpn\
-  passwd: /etc/openvpn/client/hotspot.pwd\
+start, stop openvpn or refresh .ovpn files from vpngate.net **experimental**\
+refresh will download the CSV list of free openvpn server and will create .ovpn files.\
+server from these countries will be used, defined by **ovpnsel** parameter: **AT CH DE ES FR GB JP KR SC TW US**
+out of these, the server with the highest score is defined in /etc/openvpn/client/vpngate_bestscore.ovpn and will be used as default openvpn server.\
+
 pls. see ***ovpnstart*** parameter for automatic starting openvpn and modifying parameter
 
 ~~~bash
 hotspot ovpn start                          # start openvpn service
 hotspot ovpn stop                           # stop  openvpn service (default)
+hotpsot ovpn refresh                        # recreate .ovpn config files
 ~~~
 
 ## tor
