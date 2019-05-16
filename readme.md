@@ -220,7 +220,7 @@ hotspot modpar self wipeiptables no         # no rules wipeing
 start, stop openvpn or refresh .ovpn files from vpngate.net **experimental**\
 refresh will download the CSV list of free openvpn server and will create .ovpn files.\
 server from these countries will be used, defined by **ovpnsel** parameter: **AT CH DE ES FR GB JP KR SC TW US**
-out of these, the server with the highest score is defined in /etc/openvpn/client/vpngate_bestscore.ovpn and will be used as default openvpn server.\
+out of these, the server with the highest score is defined in /etc/openvpn/client/vpngate_bestscore.ovpn and will be used as default openvpn server.
 
 pls. see ***ovpnstart*** parameter for automatic starting openvpn and modifying parameter
 
@@ -273,7 +273,7 @@ root:# hotspot setup
 
 root:# hotspot modpar hostapd ssid myHotspotID 
 root:# hotspot modpar hostapd wpa_passphrase myHotspotPassword
-root:# hotspot modpar hostapd country_code_ SE
+root:# hotspot modpar hostapd country_code SE
 root:# hotspot modpar crda REGDOMAIN SE
 root:# hotspot modpar self autostart yes    # optional autostart enable
 
