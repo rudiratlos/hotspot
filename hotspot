@@ -267,6 +267,14 @@ function ovpn_refresh {
 # rm $vpngate >/dev/null 2>&1
 }
 
+function check_ovpn_running {
+  vpnpid=`ps -ef | grep openvpn | grep -v grep | awk '{print $2}'`
+  if [ ! -z $vpnpid ]; then
+#  OpenVPN is currently running
+   echo $vpnpid | xargs kill 
+  fi
+}
+
 function stop_ap_dev {
   if [ "$1" != "" ]; then
     ip -force link set dev "$1" down
@@ -331,12 +339,13 @@ function do_ovpn {
         start)
             logger -s -t $snam "  start   openvpn (experimental)"
             ipt_do "del" "ap"
+            check_ovpn_running
             ipt_do "add" "ovpn"
             openvpn $ovpn_opt &
             ;;
         stop)
             logger -s -t $snam "  stop    openvpn (experimental)"
-            killall openvpn
+            check_ovpn_running
             ipt_do "del" "ovpn"
             ;;
         refresh)
@@ -509,6 +518,8 @@ function Hotspot_Try {
 }
 
 function Hotspot_Stop {
+  logger -s -t $snam "stopping all ovpn instances"
+  check_ovpn_running
   logger -s -t $snam "stopping  hotspot"
   logger -s -t $snam "  stop    hostapd"
   systemctl stop hostapd
