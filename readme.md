@@ -215,7 +215,22 @@ hotspot modpar self wipeiptables yes        # reset all rules (default)
 hotspot modpar self wipeiptables no         # no rules wipeing
 ~~~
 
-## openvpn
+## openvpn (user specific)
+
+copy your.ovpn and your.pwd file to /etc/ovpn/client/
+
+~~~bash
+cp your.ovpn /etc/ovpn/client/
+cp your.pwd  /etc/ovpn/client/
+hotspot modpar self ovpncfg your.ovpn
+hotspot modpar self ovpnpwd your.pwd
+hotspot modpar self ovpnrefreshbeforestart no
+hotspot modpar self ovpnstart yes
+~~~
+
+if you do not have a your.pwd, set the parameter to an emtpy string
+
+## openvpn (vpngate)
 
 start, stop openvpn or refresh .ovpn files from vpngate.net **experimental**\
 refresh will download the CSV list of free openvpn server and will create .ovpn files.\
