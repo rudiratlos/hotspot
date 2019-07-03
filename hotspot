@@ -1,13 +1,13 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.927"
+hotspotver="V0.929"
 opt1="$1"
 opt2="$2"
 opt3="$3"
 opt4="$4"
 #
-autostart="yes"
+autostart="no"
 wipeiptables="yes"
 torstart="no"
 ovpnstart="no"
@@ -67,7 +67,8 @@ wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
 hostapdf="/etc/hostapd/hostapd.conf"
 dnsmasqf="/etc/dnsmasq.conf"
 crdaf="/etc/default/crda"
-torcfg="/etc/tor/torrc"
+tordir="/etc/tor"
+torcfg="$tordir/torrc"
 hostn="`hostname`"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
@@ -83,7 +84,7 @@ ovpncfg="vpngate_bestscore.ovpn"
 ovpnpwd="vpngate.pwd"
 ovpncfgpath="${ovpndir}/${ovpncfg}"
 ovpnpwdpath="${ovpndir}/${ovpnpwd}"
-ovpn_dev="`cat $ovpncfgpath | grep -E "^.{0}dev " | awk -F " " '{print $2}'`"
+ovpn_dev="`cat $ovpncfgpath 2>/dev/null | grep -E "^.{0}dev " | awk -F " " '{print $2}'`"
 if [ "$ovpn_dev" == "" ] || [ "$ovpn_dev" == "tun" ]; then ovpn_dev="tun0"; fi
 if [ "$ovpnpwd" == "" ]; then
   ovpn_opt="--config $ovpncfgpath"
@@ -267,6 +268,14 @@ function ovpn_refresh {
 # rm $vpngate >/dev/null 2>&1
 }
 
+function ovpn_check_running {
+  vpnpid=`ps -ef | grep openvpn | grep -v grep | awk '{print $2}'`
+  if [ ! -z $vpnpid ]; then
+#  OpenVPN is currently running
+   echo $vpnpid | xargs kill
+  fi
+}
+
 function stop_ap_dev {
   if [ "$1" != "" ]; then
     ip -force link set dev "$1" down
@@ -308,8 +317,23 @@ function wlan {
             logger -s -t $snam "  stop    wlan    $wl_dev"
             wpa_cli -p $wpactrl -i $wl_dev terminate >/dev/null 2>&1
             ;;
+        clean)
+            logger -s -t $snam "  clean   wlan    $wl_dev"
+            wpa_cli terminate >/dev/null 2>&1
+            ip addr flush $wl_dev
+            ip link set dev $wl_dev down
+            rm -r /var/run/wpa_supplicant >/dev/null 2>&1
+            ;;
+        check)
+            if ! wpa_cli status | grep 'ip_address' >/dev/null 2>&1
+            then
+              logger -s -t $snam "  ERROR   wlan    $wl_dev"
+            else
+              logger -s -t $snam "  OK      wlan    $wl_dev"
+            fi
+            ;;
         *)
-            echo "Usage: $snam wlan start|stop [$wl0_dev|$wl1_dev]"
+            echo "Usage: $snam wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
             exit 1
   esac
 }
@@ -331,12 +355,13 @@ function do_ovpn {
         start)
             logger -s -t $snam "  start   openvpn (experimental)"
             ipt_do "del" "ap"
+            ovpn_check_running
             ipt_do "add" "ovpn"
             openvpn $ovpn_opt &
             ;;
         stop)
             logger -s -t $snam "  stop    openvpn (experimental)"
-            killall openvpn
+            ovpn_check_running
             ipt_do "del" "ovpn"
             ;;
         refresh)
@@ -509,6 +534,8 @@ function Hotspot_Try {
 }
 
 function Hotspot_Stop {
+  logger -s -t $snam "stopping  all ovpn instances"
+  ovpn_check_running
   logger -s -t $snam "stopping  hotspot"
   logger -s -t $snam "  stop    hostapd"
   systemctl stop hostapd
@@ -526,6 +553,17 @@ function Hotspot_Stop {
   stop_ap_dev "$ap_dev"
   iw dev $ap_dev del
   logger -s -t $snam "stopped   hotspot"
+}
+
+function Check_installed_PKG {
+# Check that what we need is installed
+  for command in iw iptables hostapd dnsmasq; do
+  which $command 2>&1 >/dev/null
+    if (( $? != 0 )); then
+      logger -s -t $snam "  ERROR:  $command is not installed (use $snam setup)"
+      exit -1
+    fi
+  done
 }
 
 function Hotspot_Setup {
@@ -559,7 +597,10 @@ function Hotspot_Setup {
 #
 
 hsm=\$(hotspot startmode 2>/dev/null)
-if [ "\$hsm" = "yes" ]; then hotspot try >/tmp/hotspot.log 2>&1; fi
+if [ "\$hsm" = "yes" ]; then
+# hotspot dbg >>/tmp/hotspot.log 2>&1;
+  hotspot try >>/tmp/hotspot.log 2>&1;
+fi
 
 # Print the IP address
 _IP=\$(hostname -I) || true
@@ -718,10 +759,11 @@ EOF
   Mod_Para  "self" "autostart" "yes"
   chmod 640 "$fil"
 
-  fil="$torcfg"
-  fil_bck "$fil" "$bckext"
-  echo `date +"%Y-%m-%d %T"` "create $fil"
-  cat <<EOF > "$fil"
+  if [ -d "$tordir" ]; then
+    fil="$torcfg"
+    fil_bck "$fil" "$bckext"
+    echo `date +"%Y-%m-%d %T"` "create $fil"
+    cat <<EOF > "$fil"
 Log notice file /var/log/tor-notices.log
 VirtualAddrNetwork $tor_subn
 AutomapHostsSuffixes .onion,.exit
@@ -729,12 +771,14 @@ AutomapHostsOnResolve 1
 TransPort ${ap_ip}:9040
 DNSPort ${ap_ip}:53
 EOF
-  chmod 644 "$fil"
-  touch /var/log/tor-notices.log >/dev/null 2>&1
-  chown debian-tor /var/log/tor-notices.log >/dev/null 2>&1
-  chmod 644 /var/log/tor-notices.log >/dev/null 2>&1
+    chmod 644 "$fil"
+    touch /var/log/tor-notices.log >/dev/null 2>&1
+    chown debian-tor /var/log/tor-notices.log >/dev/null 2>&1
+    chmod 644 /var/log/tor-notices.log >/dev/null 2>&1
+  fi
 }
 
+Check_installed_PKG
 Hotspot_Defines
 
 case "$opt1" in
@@ -792,8 +836,11 @@ case "$opt1" in
      status)
             Hotspot_Status
             ;;
+     dbg)
+            Show_Defines  "$opt2" "$opt3" "$opt4"
+            ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [wipe] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | wlan start|stop [$wl0_dev|$wl1_dev]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [wipe] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
   exit 1
 esac
 
