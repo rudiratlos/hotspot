@@ -1,13 +1,13 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.929"
+hotspotver="V0.930"
 opt1="$1"
 opt2="$2"
 opt3="$3"
 opt4="$4"
 #
-autostart="no"
+autostart="yes"
 wipeiptables="yes"
 torstart="no"
 ovpnstart="no"
@@ -115,7 +115,10 @@ function Hotspot_Defines {
   else
     if [ "$eth_ip" == "" ]; then ap_devext="$wl0_dev"; fi
   fi
-  if [ "$eth_subn" != "$ap_subn" ] && { [ "$wl1_avail" == "yes" ] || [ "$eth_subn" == "$wl0_subn" ] || [ "$wl0_subn" == "" ]; }; then hs_try="yes"; fi
+  hs_try="no"
+  if [ "$eth_subn" != "$ap_subn" ]; then
+    if [ "$wl1_avail" == "yes" ] || [ "$eth_subn" == "$wl0_subn" ] || [ "$wl0_subn" == "" ]; then hs_try="yes"; fi
+  fi
 # Show_Defines
 }
 
@@ -514,6 +517,7 @@ function Hotspot_Try {
   logger -s -t $snam "trying    hotspot"
   sleep 5     # let wlan settle
   Hotspot_Defines
+# Show_Defines
   if [ "$hs_try" == "yes" ] && [ "$ap_share" != "yes" ]; then
     logger -s -t $snam "  try     hotspot"
     Hotspot_Start nowlan
