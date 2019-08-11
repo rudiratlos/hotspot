@@ -516,7 +516,8 @@ function Hotspot_Start {
 function Hotspot_Try {
   logger -s -t $snam "trying    hotspot"
   i="0"
-  while [ $i -lt 15 ] && [ "$wl0_ip" = "" ]; do
+# wait max. 15sec for wlan0 gets an IPadr from DHCP if eth0 is not connected
+  while [ $i -lt 15 ] && [ "$wl0_ip" = "" ] && [ "$eth_ip" = "" ]; do
     Hotspot_Defines
 #   echo "Hotspot_Try $i $wl0_ip"
 #   Show_Defines
