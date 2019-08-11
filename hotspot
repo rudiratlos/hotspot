@@ -7,7 +7,7 @@ opt2="$2"
 opt3="$3"
 opt4="$4"
 #
-autostart="no"
+autostart="yes"
 wipeiptables="yes"
 torstart="no"
 ovpnstart="no"
