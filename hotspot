@@ -1,13 +1,13 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.930"
+hotspotver="V0.931"
 opt1="$1"
 opt2="$2"
 opt3="$3"
 opt4="$4"
 #
-autostart="yes"
+autostart="no"
 wipeiptables="yes"
 torstart="no"
 ovpnstart="no"
@@ -515,8 +515,14 @@ function Hotspot_Start {
 
 function Hotspot_Try {
   logger -s -t $snam "trying    hotspot"
-  sleep 5     # let wlan settle
-  Hotspot_Defines
+  i="0"
+  while [ $i -lt 15 ] && [ "$wl0_ip" = "" ]; do
+    Hotspot_Defines
+#   echo "Hotspot_Try $i $wl0_ip"
+#   Show_Defines
+    sleep 1          # let wlan settle
+    i=$[$i+1]
+  done
 # Show_Defines
   if [ "$hs_try" == "yes" ] && [ "$ap_share" != "yes" ]; then
     logger -s -t $snam "  try     hotspot"
