@@ -7,7 +7,7 @@ opt2="$2"
 opt3="$3"
 opt4="$4"
 #
-autostart="yes"
+autostart="no"
 wipeiptables="yes"
 torstart="no"
 ovpnstart="no"
@@ -515,16 +515,18 @@ function Hotspot_Start {
 
 function Hotspot_Try {
   logger -s -t $snam "trying    hotspot"
-  i="0"
 # wait max. 15sec for wlan0 gets an IPadr from DHCP if eth0 is not connected
-  while [ $i -lt 15 ] && [ "$wl0_ip" = "" ] && [ "$eth_ip" = "" ]; do
+  i="0"
+  while [ $i -le 15 ] && [ "$wl0_ip" = "" ] && [ "$eth_ip" = "" ]; do
     Hotspot_Defines
-#   echo "Hotspot_Try $i $wl0_ip"
+    logger -s -t $snam "  DHCP    wait for IPadr on $wl0_dev $wl0_ip"
 #   Show_Defines
     sleep 1          # let wlan settle
     i=$[$i+1]
   done
-# Show_Defines
+if [ "$wl0_ip" = "" ]; then
+  logger -s -t $snam "  DHCP    no IPassignment on $wl0_dev"
+fi
   if [ "$hs_try" == "yes" ] && [ "$ap_share" != "yes" ]; then
     logger -s -t $snam "  try     hotspot"
     Hotspot_Start nowlan
@@ -789,7 +791,7 @@ EOF
   fi
 }
 
-Check_installed_PKG
+#Check_installed_PKG
 Hotspot_Defines
 
 case "$opt1" in
