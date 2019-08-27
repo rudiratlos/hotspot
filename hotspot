@@ -1,18 +1,19 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.931"
+hotspotver="V0.940"
 opt1="$1"
 opt2="$2"
 opt3="$3"
 opt4="$4"
 #
-autostart="no"
+autostart="yes"
 wipeiptables="yes"
 torstart="no"
 ovpnstart="no"
 ovpnrefreshbeforestart="yes"
 nodogsplashstart="no"
+aptaddinstlist="tor openvpn"
 #
 snam="hotspot"
 eth_dev="eth0"
@@ -119,6 +120,7 @@ function Hotspot_Defines {
   if [ "$eth_subn" != "$ap_subn" ]; then
     if [ "$wl1_avail" == "yes" ] || [ "$eth_subn" == "$wl0_subn" ] || [ "$wl0_subn" == "" ]; then hs_try="yes"; fi
   fi
+  bckext=`date +"%Y%m%d%H%M%S"`
 # Show_Defines
 }
 
@@ -135,16 +137,33 @@ function Hotspot_Status {
   ps ax | grep wpa_ ; ip a ; hostname -I
 }
 
+function Check_installed_PKG {
+# Check that what we need is installed
+  for command in iw iptables hostapd dnsmasq $aptaddinstlist; do
+    if [ "$command" != "" ]; then
+      which $command 2>&1 >/dev/null
+      if (( $? != 0 )); then
+        logger -s -t $snam "  ERROR:  $command is not installed (use $snam setup)"
+        exit -1
+      fi
+    fi
+  done
+}
+
 function Mod_Para {
-  cfil="file_not_valid"
-  if [ "$1" == "hostapd" ]; then cfil="$hostapdf"; fi
-  if [ "$1" == "dnsmasq" ]; then cfil="$dnsmasqf"; fi
-  if [ "$1" == "crda" ];    then cfil="$crdaf"; fi
-  if [ "$1" == "ovpncfg" ]; then cfil="$ovpncfgpath"; fi
-  if [ "$1" == "ovpnpwd" ]; then cfil="$ovpnpwdpath"; fi
-  if [ "$1" == "torcfg" ];  then cfil="$torcfg"; fi
-  if [ "$1" == "self" ];    then cfil="$0"; fi
-  if [ "$cfil" != "file_not_valid" ]; then
+  fnv="file_not_valid"
+  cfil="$fnv"
+  case "$1" in
+    self)    cfil="$0" ;;
+    hostapd) cfil="$hostapdf" ;;
+    dnsmasq) cfil="$dnsmasqf" ;;
+    crda)    cfil="$crdaf" ;;
+    ovpncfg) if [ -d "$ovpndir" ]; then cfil="$ovpncfgpath"; fi ;;
+    ovpnpwd) if [ -d "$ovpndir" ]; then cfil="$ovpnpwdpath"; fi ;;
+    torcfg)  if [ -d "$tordir" ];  then cfil="$torcfg"; fi ;;
+  esac
+
+  if [ "$cfil" != "$fnv" ]; then
     logger -s -t $snam "  change  $1 $2 $3 ($cfil)"
     case "$1" in
       ovpnpwd) echo -e "$2\n$3" > $cfil ;;
@@ -154,6 +173,7 @@ function Mod_Para {
     esac
   else
     echo "  Mod_Para invalid file selector $1"
+    Check_installed_PKG
   fi
 }
 
@@ -256,19 +276,21 @@ function ovpn_cfg_dwn {
 }
 
 function ovpn_refresh {
-  dodwn="yes"
-  if [ -f "$vpngate" ]; then
-#   test file is recent (not older than xx mins)
-    if [ `stat --format=%Y $vpngate` -ge $((`date +%s` - $vpngatefileage)) ]; then
-      dodwn="no"
+  if [ -d "$ovpndir" ]; then
+    dodwn="yes"
+    if [ -f "$vpngate" ]; then
+#     test file is recent (not older than xx mins)
+      if [ `stat --format=%Y $vpngate` -ge $((`date +%s` - $vpngatefileage)) ]; then
+        dodwn="no"
+      fi
     fi
+    if [ "$dodwn" == "yes" ]; then
+      ovpn_cfg_dwn
+    else
+      logger -s -t $snam "  file is recent ($vpngate)"
+    fi
+#   rm $vpngate >/dev/null 2>&1
   fi
-  if [ "$dodwn" == "yes" ]; then
-    ovpn_cfg_dwn
-  else
-    logger -s -t $snam "  file is recent ($vpngate)"
-  fi
-# rm $vpngate >/dev/null 2>&1
 }
 
 function ovpn_check_running {
@@ -354,7 +376,9 @@ function do_iptab {
 }
 
 function do_ovpn {
-  case "$1" in
+  Check_installed_PKG
+  if [ -d "$ovpndir" ]; then
+    case "$1" in
         start)
             logger -s -t $snam "  start   openvpn (experimental)"
             ipt_do "del" "ap"
@@ -374,11 +398,16 @@ function do_ovpn {
         *)
             echo "Usage: $snam ovpn start|stop"
             exit 1
-  esac
+    esac
+  else
+    logger -s -t $snam "ERROR ovpn not installed"
+  fi
 }
 
 function do_tor {
-  case "$1" in
+  Check_installed_PKG
+  if [ -d "$tordir" ]; then
+    case "$1" in
         start)
             logger -s -t $snam "  start   tor (experimental)"
             ipt_do "del" "ap"
@@ -393,7 +422,10 @@ function do_tor {
         *)
             echo "Usage: $snam tor start|stop"
             exit 1
-  esac
+    esac
+  else
+    logger -s -t $snam "ERROR tor not installed"
+  fi
 }
 
 function do_syslog {
@@ -456,6 +488,7 @@ function Mdfy_Chan {
 }
 
 function Hotspot_Start {
+  Check_installed_PKG
   Hotspot_Defines
   logger -s -t $snam "starting  hotspot $hotspotver"
   logger -s -t $snam "  ETHER   $eth_dev    $eth_ip"
@@ -494,7 +527,7 @@ function Hotspot_Start {
   systemctl restart dnsmasq
   logger -s -t $snam "started   hotspot"
 
-  if [ "$ovpnstart" == "yes" ]; then
+  if [ "$ovpnstart" == "yes" ] && [ -d "$ovpndir" ]; then
     if [ "$ovpnrefreshbeforestart" == "yes" ]; then
       ovpn_refresh
     fi
@@ -514,6 +547,7 @@ function Hotspot_Start {
 }
 
 function Hotspot_Try {
+  Check_installed_PKG
   logger -s -t $snam "trying    hotspot"
 # wait max. 15sec for wlan0 gets an IPadr from DHCP if eth0 is not connected
   i="0"
@@ -547,6 +581,7 @@ fi
 }
 
 function Hotspot_Stop {
+  Check_installed_PKG
   logger -s -t $snam "stopping  all ovpn instances"
   ovpn_check_running
   logger -s -t $snam "stopping  hotspot"
@@ -568,37 +603,7 @@ function Hotspot_Stop {
   logger -s -t $snam "stopped   hotspot"
 }
 
-function Check_installed_PKG {
-# Check that what we need is installed
-  for command in iw iptables hostapd dnsmasq; do
-  which $command 2>&1 >/dev/null
-    if (( $? != 0 )); then
-      logger -s -t $snam "  ERROR:  $command is not installed (use $snam setup)"
-      exit -1
-    fi
-  done
-}
-
-function Hotspot_Setup {
-  echo `date +"%Y-%m-%d %T"` "Setup  Hotspot $1 $2 ..."
-  if [ "$1" != "noswpkg" ]; then
-    echo `date +"%Y-%m-%d %T"` "install sw packages"
-    apt-get -qy install iw iptables hostapd dnsmasq tor openvpn
-    ovpn_refresh
-  fi
-# disable/stop services. starting by script if needed
-  systemctl disable dnsmasq.service >/dev/null 2>&1
-  systemctl stop    dnsmasq.service >/dev/null 2>&1
-  systemctl disable openvpn.service >/dev/null 2>&1
-  systemctl stop    openvpn.service >/dev/null 2>&1
-  systemctl unmask  hostapd.service >/dev/null 2>&1
-  systemctl disable hostapd.service >/dev/null 2>&1
-  systemctl stop    hostapd.service >/dev/null 2>&1
-  update-rc.d tor   disable >/dev/null 2>&1
-  service tor stop  >/dev/null 2>&1
-
-  bckext=`date +"%Y%m%d%H%M%S"`
-
+function Setup_rclocal {
   fil="/etc/rc.local"
   fil2="/etc/issue"
   fil_bck "$fil"  "$bckext"
@@ -627,14 +632,18 @@ fi
 exit 0
 EOF
   chmod 750 "$fil"
+}
 
+function Setup_sysctlconf {
   fil="/etc/sysctl.conf"
   fil_bck "$fil" "$bckext"
 # net.ipv4.ip_forward=1
   grep -q -F "net.ipv4.ip_forward=" $fil || echo "net.ipv4.ip_forward=" >> $fil
   sed -r -i 's/net\.ipv4\.ip_forward[ ]*=.*/net\.ipv4\.ip_forward=1/g' $fil
   sed -r -i 's/#net\.ipv4\.ip_forward=1/net\.ipv4\.ip_forward=1/g' $fil
+}
 
+function Setup_dhcpcdconf {
   fil="/etc/dhcpcd.conf"
   fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
@@ -659,7 +668,9 @@ interface ap0
 EOF
   chmod 664 "$fil"
   chown root:netdev "$fil"
+}
 
+function Setup_dnsmasqconf {
   fil="/etc/dnsmasq.conf"
   fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
@@ -716,7 +727,9 @@ local-service
 localise-queries
 EOF
   chmod 644 "$fil"
+}
 
+function Setup_hostapddflt {
   fil="/etc/default/hostapd"
   fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
@@ -725,7 +738,9 @@ EOF
 DAEMON_CONF="/etc/hostapd/hostapd.conf"
 EOF
   chmod 600 "$fil"
+}
 
+function Setup_hostapdconf {
   fil="/etc/hostapd/hostapd.conf"
   fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
@@ -771,7 +786,9 @@ EOF
   Mod_Para  "crda"    "REGDOMAIN"    "$spot_cntry2"
   Mod_Para  "self" "autostart" "yes"
   chmod 640 "$fil"
+}
 
+function Setup_torcfg {
   if [ -d "$tordir" ]; then
     fil="$torcfg"
     fil_bck "$fil" "$bckext"
@@ -791,7 +808,34 @@ EOF
   fi
 }
 
-#Check_installed_PKG
+function Hotspot_Setup {
+  echo `date +"%Y-%m-%d %T"` "Setup  Hotspot $1 $2 ..."
+  if [ "$1" != "noswpkg" ]; then
+    echo `date +"%Y-%m-%d %T"` "install sw packages"
+    apt-get -qy install iw iptables hostapd dnsmasq $aptaddinstlist
+    ovpn_refresh
+  fi
+# disable/stop services. starting by script if needed
+  systemctl disable dnsmasq.service >/dev/null 2>&1
+  systemctl stop    dnsmasq.service >/dev/null 2>&1
+  systemctl disable openvpn.service >/dev/null 2>&1
+  systemctl stop    openvpn.service >/dev/null 2>&1
+  systemctl unmask  hostapd.service >/dev/null 2>&1
+  systemctl disable hostapd.service >/dev/null 2>&1
+  systemctl stop    hostapd.service >/dev/null 2>&1
+  update-rc.d tor   disable >/dev/null 2>&1
+  service tor stop  >/dev/null 2>&1
+
+  bckext=`date +"%Y%m%d%H%M%S"`
+  Setup_rclocal     $1 $2
+  Setup_sysctlconf  $1 $2
+  Setup_dhcpcdconf  $1 $2
+  Setup_dnsmasqconf $1 $2
+  Setup_hostapddflt $1 $2
+  Setup_hostapdconf $1 $2
+  Setup_torcfg      $1 $2
+}
+
 Hotspot_Defines
 
 case "$opt1" in
