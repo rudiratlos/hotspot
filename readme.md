@@ -88,8 +88,8 @@ hotspot try
 
 ### tor opvn install disable
 
-you can disable the installation of tor and/or ovpn package by modifying \
-the ***aptaddinstlist*** variable.
+before executing hotspot setup command, \
+you can disable the installation of tor and/or ovpn package by modifying the ***aptaddinstlist*** variable.
 
 ~~~bash
 hotspot modpar self aptaddinstlist "tor"           # install tor only
