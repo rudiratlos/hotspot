@@ -94,7 +94,7 @@ the ***aptaddinstlist*** variable.
 ~~~bash
 hotspot modpar self aptaddinstlist "tor"           # install tor only
 hotspot modpar self aptaddinstlist "openvpn"       # install openvpn only 
-hotspot modpar self aptaddinstlist "tor openvpn"   # install both
+hotspot modpar self aptaddinstlist "tor openvpn"   # install both (default)
 hotspot modpar self aptaddinstlist ""              # do not install tor and openvpn
 ~~~
 
