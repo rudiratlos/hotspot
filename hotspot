@@ -151,6 +151,8 @@ function Check_installed_PKG {
 }
 
 function Mod_Para {
+
+echo "modpara $1 $2 $3"
   fnv="file_not_valid"
   cfil="$fnv"
   case "$1" in
@@ -168,8 +170,12 @@ function Mod_Para {
     case "$1" in
       ovpnpwd) echo -e "$2\n$3" > $cfil ;;
       ovpncfg|torcfg) sed -i -r "s/$2[ ]* .*/$2 $3/g" "$cfil" ;;
-      self) sed -i -r "s/$2[ ]*=.*/$2=\"$3\"/g" "$cfil" ;;
-      *) sed -i -r "s/$2[ ]*=.*/$2=$3/g" "$cfil" ;;
+      self) echo 'sed -i -r "s/$2[ ]*=.*/$2=\"$3\"/g" "$cfil"'
+            sed -i -r "s/$2[ ]*=.*/$2=\"$3\"/g" "$cfil" 
+            ;;
+      *) echo "modpar else" 
+	sed -i -r "s/$2[ ]*=.*/$2=$3/g" "$cfil" 
+;;
     esac
   else
     echo "  Mod_Para invalid file selector $1"

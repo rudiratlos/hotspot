@@ -86,6 +86,18 @@ hotspot modpar crda REGDOMAIN SE
 hotspot try
 ~~~
 
+### tor opvn install disable
+
+you can disable the installation of tor and/or ovpn package by modifying \
+the ***aptaddinstlist*** variable.
+
+~~~bash
+hotspot modpar self aptaddinstlist "tor"           # install tor only
+hotspot modpar self aptaddinstlist "openvpn"       # install openvpn only 
+hotspot modpar self aptaddinstlist "tor openvpn"   # install both
+hotspot modpar self aptaddinstlist ""              # do not install tor and openvpn
+~~~
+
 ## start
 
 start all hotspot associated functions:
