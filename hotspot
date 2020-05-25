@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.940"
+hotspotver="V0.943"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -48,6 +48,7 @@ ap_ipanet="${ap_net}.1/24"
 ap_iptsubn="${ap_net}.0/24"
 ap_revip=`echo "$ap_ip" | awk -F "." '{ print $4"."$3"."$2"."$1 }'`
 ap_revnet=`echo "$ap_ip" | awk -F "." '{ print $3"."$2"."$1 }'`
+ap_cauri="http://${ap_ip}/index.html"
 #
 tor_subn="10.192.0.0/10"
 #
@@ -67,10 +68,13 @@ wpactrl="/var/run/wpa_supplicant"
 wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
 hostapdf="/etc/hostapd/hostapd.conf"
 dnsmasqf="/etc/dnsmasq.conf"
+dnsmasqcpf="/etc/dnsmasq.captiveportal.conf"
 crdaf="/etc/default/crda"
 tordir="/etc/tor"
 torcfg="$tordir/torrc"
 hostn="`hostname`"
+fbdev="/dev/fb1"
+qrshow="yes"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
@@ -92,6 +96,23 @@ if [ "$ovpnpwd" == "" ]; then
 else
   ovpn_opt="--config $ovpncfgpath --auth-user-pass $ovpnpwdpath"
 fi
+
+function qrcode_on_oled  {
+# show access info on a small OLED screen
+# qrcode_on_oled "x" "http://xx.xx.xx.xx"
+# qrcode_on_oled "x" "WIFI:S:$spot_ssid;T:WPA2;P:$spot_psk;;"
+  if [ "$qrshow" == "yes" ] || [ "$1" == "interactive" ]; then
+    if [ "$2" != "" ]; then
+      qrfile="/tmp/qrcode.png"
+      /usr/bin/qrencode -o "$qrfile" "$2"
+      if [ -f "$qrfile" ] && [ -e "$fbdev" ]; then
+        logger   -s -t $snam "  QRcode  show $2"
+        /usr/bin/fbi -noverbose -T 1 -a -d "$fbdev" "$qrfile" 2>/dev/null
+#       rm "$qrfile"
+      fi
+    fi
+  fi
+}
 
 function Show_Defines {
   echo `date +"%Y-%m-%d %T"` "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
@@ -120,6 +141,19 @@ function Hotspot_Defines {
   if [ "$eth_subn" != "$ap_subn" ]; then
     if [ "$wl1_avail" == "yes" ] || [ "$eth_subn" == "$wl0_subn" ] || [ "$wl0_subn" == "" ]; then hs_try="yes"; fi
   fi
+
+  acc_info=""
+  if [ "$hs_try" == "yes" ]
+  then
+    acc_info="WIFI:S:$spot_ssid;T:WPA2;P:$spot_psk;;"
+  else
+    if [ "$wl1_ip" != "" ]; then acc_info="http://$wl1_ip"; fi
+    if [ "$eth_ip" != "" ]; then acc_info="http://$eth_ip"; fi
+    if [ "$wl0_ip" != "" ]; then acc_info="http://$wl0_ip"; fi
+    acc_info=`echo "$acc_info" | awk -F "/" '{ print $3 }'`
+#   echo "$acc_info"
+  fi
+
   bckext=`date +"%Y%m%d%H%M%S"`
 # Show_Defines
 }
@@ -139,7 +173,7 @@ function Hotspot_Status {
 
 function Check_installed_PKG {
 # Check that what we need is installed
-  for command in iw iptables hostapd dnsmasq $aptaddinstlist; do
+  for command in iw iptables hostapd dnsmasq; do
     if [ "$command" != "" ]; then
       which $command 2>&1 >/dev/null
       if (( $? != 0 )); then
@@ -151,8 +185,6 @@ function Check_installed_PKG {
 }
 
 function Mod_Para {
-
-echo "modpara $1 $2 $3"
   fnv="file_not_valid"
   cfil="$fnv"
   case "$1" in
@@ -170,12 +202,8 @@ echo "modpara $1 $2 $3"
     case "$1" in
       ovpnpwd) echo -e "$2\n$3" > $cfil ;;
       ovpncfg|torcfg) sed -i -r "s/$2[ ]* .*/$2 $3/g" "$cfil" ;;
-      self) echo 'sed -i -r "s/$2[ ]*=.*/$2=\"$3\"/g" "$cfil"'
-            sed -i -r "s/$2[ ]*=.*/$2=\"$3\"/g" "$cfil" 
-            ;;
-      *) echo "modpar else" 
-	sed -i -r "s/$2[ ]*=.*/$2=$3/g" "$cfil" 
-;;
+      self) sed -i -r "s/$2[ ]*=.*/$2=\"$3\"/g" "$cfil" ;;
+      *) sed -i -r "s/$2[ ]*=.*/$2=$3/g" "$cfil" ;;
     esac
   else
     echo "  Mod_Para invalid file selector $1"
@@ -342,8 +370,12 @@ function wlan {
   case "$1" in
         start)
             logger -s -t $snam "  start   wlan    $wl_dev"
-            wpa_supplicant -B -i $wl_dev -c $wpasupg >/dev/null 2>&1
-            ;;
+    	    if [[ "$(pidof wpa_supplicant)" ]]; then
+    		wpa_cli reassociate
+    	    else
+                wpa_supplicant -B -i $wl_dev -c $wpasupg >/dev/null 2>&1
+            fi
+	   ;;
         stop)
             logger -s -t $snam "  stop    wlan    $wl_dev"
             wpa_cli -p $wpactrl -i $wl_dev terminate >/dev/null 2>&1
@@ -564,9 +596,9 @@ function Hotspot_Try {
     sleep 1          # let wlan settle
     i=$[$i+1]
   done
-if [ "$wl0_ip" = "" ]; then
-  logger -s -t $snam "  DHCP    no IPassignment on $wl0_dev"
-fi
+  if [ "$wl0_ip" = "" ]; then
+    logger -s -t $snam "  DHCP    no IPassignment on $wl0_dev"
+  fi
   if [ "$hs_try" == "yes" ] && [ "$ap_share" != "yes" ]; then
     logger -s -t $snam "  try     hotspot"
     Hotspot_Start nowlan
@@ -584,6 +616,7 @@ fi
       logger   -s -t $snam "  PARAM   ap_share not set to yes"
     fi
   fi
+  qrcode_on_oled "try" "$acc_info"
 }
 
 function Hotspot_Stop {
@@ -682,6 +715,7 @@ function Setup_dnsmasqconf {
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
 dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
+dhcp-mac=set:client_is_a_pi,DC:A6:32:*:*:*
 dhcp-reply-delay=tag:client_is_a_pi,2
 
 # Never forward plain names (without a dot or domain part)
@@ -716,6 +750,10 @@ dhcp-option=44,$ap_ip    # set netbios-over-TCP/IP aka WINS
 dhcp-option=45,$ap_ip    # netbios datagram distribution server
 dhcp-option=46,8             # netbios node type
 dhcp-option=252,"\n"         # REQUIRED to get win7 to behave
+dhcp-option=160,http://10.3.141.1/index.html # RFC 7710
+
+# Include another configuration options
+#conf-file=/etc/dnsmasq.captiveportal.conf
 
 # DHCPv4 Should be set when dnsmasq is definitely the only DHCP server on a network
 #dhcp-authoritative
@@ -731,6 +769,37 @@ log-async
 local-ttl=2
 local-service
 localise-queries
+EOF
+  chmod 644 "$fil"
+
+  fil="/etc/dnsmasq.captiveportal.conf"
+  fil_bck "$fil" "$bckext"
+  echo `date +"%Y-%m-%d %T"` "create $fil"
+  cat <<EOF > "$fil"
+#file autocreated, do not edit (2020-05-25 16:35:43)
+
+# Captive Portal
+# DNS Internet Connectivity Test Domains
+# redirect all requests
+#address=/#/$ap_ip
+# specific platform redirects
+# Android
+address=/clients1.google.com/$ap_ip
+address=/clients3.google.com/$ap_ip
+address=/connectivitycheck.android.com/$ap_ip
+address=/connectivitycheck.gstatic.com/$ap_ip
+# IOS
+address=/captive.apple.com/$ap_ip
+# WIN
+address=/www.msftconnecttest.com/$ap_ip
+address=/dns.msftncsi.com/$ap_ip
+address=/www.msftncsi.com/$ap_ip
+# Mozilla Firefox, Mozilla Thunderbird, SeaMonkey
+address=/detectportal.firefox.com/$ap_ip
+
+# DHCP
+#dhcp-option=160,$ap_cauri # RFC 7710
+
 EOF
   chmod 644 "$fil"
 }
@@ -761,7 +830,7 @@ ap_isolate=0
 channel=6
 hw_mode=g
 
-country_code=$spot_cntry2
+country_code=GB
 ieee80211d=1
 
 ssid=$spot_ssid
@@ -818,7 +887,7 @@ function Hotspot_Setup {
   echo `date +"%Y-%m-%d %T"` "Setup  Hotspot $1 $2 ..."
   if [ "$1" != "noswpkg" ]; then
     echo `date +"%Y-%m-%d %T"` "install sw packages"
-    apt-get -qy install iw iptables hostapd dnsmasq $aptaddinstlist
+    apt-get -qy install iw iptables hostapd dnsmasq fbi qrencode $aptaddinstlist
     ovpn_refresh
   fi
 # disable/stop services. starting by script if needed
@@ -890,6 +959,10 @@ case "$opt1" in
        ipt)
             do_iptab      "$opt2"
             ;;
+    qrcode)
+#           echo "qrcode_on_oled $acc_info"
+            qrcode_on_oled "interactive" "$acc_info"
+            ;;
     version)
             echo "$hotspotver"
             ;;
@@ -903,7 +976,7 @@ case "$opt1" in
             Show_Defines  "$opt2" "$opt3" "$opt4"
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [wipe] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [wipe] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | qrcode | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
   exit 1
 esac
 
