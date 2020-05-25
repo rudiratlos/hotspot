@@ -388,11 +388,13 @@ function wlan {
             rm -r /var/run/wpa_supplicant >/dev/null 2>&1
             ;;
         check)
-            if ! wpa_cli status | grep 'ip_address' >/dev/null 2>&1
-            then
-              logger -s -t $snam "  ERROR   wlan    $wl_dev"
-            else
-              logger -s -t $snam "  OK      wlan    $wl_dev"
+            if [ "$wl_dev" != "" ]; then
+	      status=`wpa_cli -i $wl_dev status | grep wpa_state`
+              if [ "$status" != "wpa_state=COMPLETED" ]; then
+                logger -s -t $snam "  ERROR   wlan    $wl_dev $status"
+              else
+                logger -s -t $snam "  OK      wlan    $wl_dev"
+              fi
             fi
             ;;
         *)
