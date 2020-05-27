@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.943"
+hotspotver="V0.944"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -370,11 +370,8 @@ function wlan {
   case "$1" in
         start)
             logger -s -t $snam "  start   wlan    $wl_dev"
-    	    if [[ "$(pidof wpa_supplicant)" ]]; then
-    		wpa_cli reassociate
-    	    else
-                wpa_supplicant -B -i $wl_dev -c $wpasupg >/dev/null 2>&1
-            fi
+    	    systemctl restart dhcpcd
+#           wpa_cli -i $wl_dev reconfigure
 	   ;;
         stop)
             logger -s -t $snam "  stop    wlan    $wl_dev"
