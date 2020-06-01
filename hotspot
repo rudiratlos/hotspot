@@ -73,7 +73,7 @@ crdaf="/etc/default/crda"
 tordir="/etc/tor"
 torcfg="$tordir/torrc"
 hostn="`hostname`"
-fbdev="/dev/fb1"
+fbdev="/dev/fb0"
 qrshow="no"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
@@ -651,12 +651,7 @@ function Setup_rclocal {
 #!/bin/sh -e
 #file autocreated, do not edit
 #
-
-hsm=\$(hotspot startmode 2>/dev/null)
-if [ "\$hsm" = "yes" ]; then
-# hotspot dbg >>/tmp/hotspot.log 2>&1;
-  hotspot try >>/tmp/hotspot.log 2>&1;
-fi
+hotspot startmode try >>/tmp/hotspot.log 2>&1
 
 # Print the IP address
 _IP=\$(hostname -I) || true
@@ -775,7 +770,7 @@ EOF
   fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
-#file autocreated, do not edit (2020-06-01 09:35:27)
+#file autocreated, do not edit (2020-06-01 12:37:02)
 
 # Captive Portal
 # DNS Internet Connectivity Test Domains
@@ -921,6 +916,23 @@ case "$opt1" in
        stop)
             Hotspot_Stop  "$opt2"
             ;;
+  startmode)
+            case "$opt2" in
+              try)
+                if [ "$autostart" == "yes" ]; then
+                  Hotspot_Try "$opt3"
+                fi
+              ;;
+              start)
+                if [ "$autostart" == "yes" ]; then
+                  Hotspot_Start "$opt3"
+                fi
+              ;;
+              *)
+                echo "$autostart"
+              ;;
+            esac
+            ;;
     restart)
             Hotspot_Stop   nowlan
             logger -s -t $snam "  20sec  settle time"
@@ -963,9 +975,6 @@ case "$opt1" in
             ;;
     version)
             echo "$hotspotver"
-            ;;
-    startmode)
-            echo "$autostart"
             ;;
      status)
             Hotspot_Status
