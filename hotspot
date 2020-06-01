@@ -1,13 +1,13 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.944"
+hotspotver="V0.950"
 opt1="$1"
 opt2="$2"
 opt3="$3"
 opt4="$4"
 #
-autostart="yes"
+autostart="no"
 wipeiptables="yes"
 torstart="no"
 ovpnstart="no"
@@ -74,7 +74,7 @@ tordir="/etc/tor"
 torcfg="$tordir/torrc"
 hostn="`hostname`"
 fbdev="/dev/fb1"
-qrshow="yes"
+qrshow="no"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
@@ -201,9 +201,9 @@ function Mod_Para {
     logger -s -t $snam "  change  $1 $2 $3 ($cfil)"
     case "$1" in
       ovpnpwd) echo -e "$2\n$3" > $cfil ;;
-      ovpncfg|torcfg) sed -i -r "s/$2[ ]* .*/$2 $3/g" "$cfil" ;;
-      self) sed -i -r "s/$2[ ]*=.*/$2=\"$3\"/g" "$cfil" ;;
-      *) sed -i -r "s/$2[ ]*=.*/$2=$3/g" "$cfil" ;;
+      ovpncfg|torcfg) sed -i -r "s/^$2[ ]* .*/$2 $3/g" "$cfil" ;;
+      self) sed -i -r "s/^$2[ ]*=.*/$2=\"$3\"/g" "$cfil" ;;
+      *) sed -i -r "s/^$2[ ]*=.*/$2=$3/g" "$cfil" ;;
     esac
   else
     echo "  Mod_Para invalid file selector $1"
@@ -370,9 +370,9 @@ function wlan {
   case "$1" in
         start)
             logger -s -t $snam "  start   wlan    $wl_dev"
-    	    systemctl restart dhcpcd
+            systemctl restart dhcpcd
 #           wpa_cli -i $wl_dev reconfigure
-	   ;;
+            ;;
         stop)
             logger -s -t $snam "  stop    wlan    $wl_dev"
             wpa_cli -p $wpactrl -i $wl_dev terminate >/dev/null 2>&1
@@ -386,7 +386,7 @@ function wlan {
             ;;
         check)
             if [ "$wl_dev" != "" ]; then
-	      status=`wpa_cli -i $wl_dev status | grep wpa_state`
+              status=`wpa_cli -i $wl_dev status | grep wpa_state`
               if [ "$status" != "wpa_state=COMPLETED" ]; then
                 logger -s -t $snam "  ERROR   wlan    $wl_dev $status"
               else
@@ -775,7 +775,7 @@ EOF
   fil_bck "$fil" "$bckext"
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
-#file autocreated, do not edit (2020-05-25 16:35:43)
+#file autocreated, do not edit (2020-06-01 09:35:27)
 
 # Captive Portal
 # DNS Internet Connectivity Test Domains
@@ -829,7 +829,7 @@ ap_isolate=0
 channel=6
 hw_mode=g
 
-country_code=GB
+country_code=$spot_cntry2
 ieee80211d=1
 
 ssid=$spot_ssid
@@ -844,7 +844,6 @@ ieee80211n=1
 ieee80211ac=1
 wmm_enabled=1
 macaddr_acl=0
-ignore_broadcast_ssid=0
 auth_algs=1
 
 logger_syslog=-1
