@@ -8,6 +8,8 @@ functions:
 - start
 - stop
 - restart
+- enable
+- disable
 - retry
 - status
 - setup
@@ -19,6 +21,7 @@ functions:
 - version
 - wlan [start|stop]
 - modpar \<dnsmasq|hostapd|self\> \<name\> [value]
+- automatic start at boot process by systemd
 
 will use onboard wlan adaptor for hotspot functionality and\
 the on board ethernet port or an optional external usb wlan adaptor (e.g. EW-7811Un Realtek RTL8188CUS)\
@@ -96,6 +99,30 @@ hotspot modpar self aptaddinstlist "tor"           # install tor only
 hotspot modpar self aptaddinstlist "openvpn"       # install openvpn only 
 hotspot modpar self aptaddinstlist "tor openvpn"   # install both (default)
 hotspot modpar self aptaddinstlist ""              # do not install tor and openvpn
+~~~
+
+## enable
+
+enable hotspot service
+
+hotspot will be started by systemd service \
+control file: /lib/systemd/system/hotspot.service \
+the service will be started at boot stage where \
+network interfaces are available. \
+If autostart variable is set to "yes", hotspot will be tried to start. \
+
+Older versions, hotspot was started by rc.local.
+
+~~~bash
+hotspot enable
+~~~
+
+## disable
+
+disable hotspot service
+
+~~~bash
+hotspot disable
 ~~~
 
 ## start
@@ -185,11 +212,14 @@ hotspot modpar hostapd country_code DE       # set parameter country_code=DE
 
 #### autostart
 
-During boot process /etc/rc.local will look for file content ***autostart="yes"*** in /usr/local/sbin/hotspot and will execute **hotspot try** command.
+During boot process systemd service hotspot.service will look for \
+file content ***autostart="yes"*** in /usr/local/sbin/hotspot and will execute **hotspot try** command.\
+
+V0.960: This is not needed anymore, use ***hotspot enable/disable*** command.
 
 ~~~bash
-hotspot modpar self autostart yes            # enable  autostart
-hotspot modpar self autostart no             # disable autostart (default)
+hotspot modpar self autostart yes            # enable  autostart (default)
+hotspot modpar self autostart no             # disable autostart
 ~~~
 
 #### ovpnstart

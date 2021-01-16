@@ -1,13 +1,13 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.950"
+hotspotver="V0.960"
 opt1="$1"
 opt2="$2"
 opt3="$3"
 opt4="$4"
 #
-autostart="no"
+autostart="yes"
 wipeiptables="yes"
 torstart="no"
 ovpnstart="no"
@@ -74,7 +74,7 @@ tordir="/etc/tor"
 torcfg="$tordir/torrc"
 hostn="`hostname`"
 fbdev="/dev/fb0"
-qrshow="no"
+qrshow="yes"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
@@ -106,7 +106,7 @@ function qrcode_on_oled  {
       qrfile="/tmp/qrcode.png"
       /usr/bin/qrencode -o "$qrfile" "$2"
       if [ -f "$qrfile" ] && [ -e "$fbdev" ]; then
-        logger   -s -t $snam "  QRcode  show $2"
+        echo "  QRcode  show $2"
         /usr/bin/fbi -noverbose -T 1 -a -d "$fbdev" "$qrfile" 2>/dev/null
 #       rm "$qrfile"
       fi
@@ -167,8 +167,14 @@ function fil_bck {
 }
 
 function Hotspot_Status {
-# echo `date +"%Y-%m-%d %T"` "Status Hotspot ..."
-  ps ax | grep wpa_ ; ip a ; hostname -I
+  echo `date +"%Y-%m-%d %T"` "Status Hotspot ..."
+  systemctl -n50 status hotspot
+  echo ""
+  ps ax | grep wpa_
+  echo ""
+  ip a
+  echo ""
+  hostname -I
 }
 
 function Check_installed_PKG {
@@ -177,7 +183,7 @@ function Check_installed_PKG {
     if [ "$command" != "" ]; then
       which $command 2>&1 >/dev/null
       if (( $? != 0 )); then
-        logger -s -t $snam "  ERROR:  $command is not installed (use $snam setup)"
+        echo "  ERROR:  $command is not installed (use $snam setup)"
         exit -1
       fi
     fi
@@ -198,7 +204,7 @@ function Mod_Para {
   esac
 
   if [ "$cfil" != "$fnv" ]; then
-    logger -s -t $snam "  change  $1 $2 $3 ($cfil)"
+    echo "  change  $1 $2 $3 ($cfil)"
     case "$1" in
       ovpnpwd) echo -e "$2\n$3" > $cfil ;;
       ovpncfg|torcfg) sed -i -r "s/^$2[ ]* .*/$2 $3/g" "$cfil" ;;
@@ -211,8 +217,18 @@ function Mod_Para {
   fi
 }
 
+function Hotspot_Enable  {
+  echo `date +"%Y-%m-%d %T"` "Enable Hotspot service ..."
+  systemctl enable  hotspot.service
+}
+
+function Hotspot_Disable  {
+  echo `date +"%Y-%m-%d %T"` "Disable Hotspot service ..."
+  systemctl disable  hotspot.service
+}
+
 function ipt_cln {
-  logger -s -t $snam "  ipt     $1 $2"
+  echo "  ipt     $1 $2"
   iptables -t nat -F
   iptables -t mangle -F
   iptables -t nat -X
@@ -224,28 +240,28 @@ function ipt_cln {
 }
 
 function ipt_chains {
-  logger -s -t $snam "  ipt     chains"
+  echo "  ipt     chains"
   iptables -P INPUT   ACCEPT
   iptables -P OUTPUT  ACCEPT
   iptables -P FORWARD ACCEPT
 }
 
 function ipt_ap {
-  logger -s -t $snam "  ipt     ap   $1 $ap_devext $ap_dev $ap_iptsubn"
+  echo "  ipt     ap   $1 $ap_devext $ap_dev $ap_iptsubn"
   iptables -t nat $1 POSTROUTING -s $ap_iptsubn ! -d $ap_iptsubn -j MASQUERADE
   iptables $1 FORWARD -i $ap_devext -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
   iptables $1 FORWARD -i $ap_dev -o $ap_devext -j ACCEPT
 }
 
 function ipt_ovpn {
-  logger -s -t $snam "  ipt     ovpn $1 $ovpn_dev $ap_dev"
+  echo "  ipt     ovpn $1 $ovpn_dev $ap_dev"
   iptables -t nat $1 POSTROUTING -o $ovpn_dev -j MASQUERADE
   iptables $1 FORWARD -i $ovpn_dev -o $ap_dev -m state --state RELATED,ESTABLISHED -j ACCEPT
   iptables $1 FORWARD -i $ap_dev -o $ovpn_dev -j ACCEPT
 }
 
 function ipt_tor {
-  logger -s -t $snam "  ipt     tor  $1 $ap_dev (using ports 22 53 9040)"
+  echo "  ipt     tor  $1 $ap_dev (using ports 22 53 9040)"
   iptables -t nat $1 PREROUTING -i $ap_dev -p tcp --dport 22 -j REDIRECT --to-ports 22
   iptables -t nat $1 PREROUTING -i $ap_dev -p udp --dport 53 -j REDIRECT --to-ports 53
   iptables -t nat $1 PREROUTING -i $ap_dev -p tcp --syn -j REDIRECT --to-ports 9040
@@ -253,13 +269,13 @@ function ipt_tor {
 
 function ipt_do {
   if [ "$1" == "add" ] || [ "$1" == "del" ]; then
-    logger -s -t $snam "  ipt     $1 $2"
+    echo "  ipt     $1 $2"
     if [ "$1" == "add" ];  then opt="-A"; else opt="-D"; fi
     if [ "$2" == "tor" ];  then ipt_tor  "$opt"; fi
     if [ "$2" == "ovpn" ]; then ipt_ovpn "$opt"; fi
     if [ "$2" == "ap" ];   then ipt_ap   "$opt"; fi
   else
-    logger -s -t $snam "  ipt     invalid option $1"
+    echo "  ipt     invalid option $1"
   fi
 }
 
@@ -274,7 +290,7 @@ function ovpn_cfg_dwn {
 # download and create ovpn config files, source: www.vpngate.net
 #HostName,IP,Score,Ping,Speed,CountryLong,CountryShort,NumVpnSessions,Uptime,TotalUsers,TotalTraffic,LogType,Operator,Message,OpenVPN_ConfigData_Base64
   vpnurl="https://www.vpngate.net/api/iphone/"
-  logger -s -t $snam "  dwnload $vpnurl"
+  echo "  dwnload $vpnurl"
   wget -q -O $vpngate $vpnurl
   if [ -f "$vpngate" ]; then
     vg_filn2="${ovpndir}/vpngate_scores.txt"
@@ -297,7 +313,7 @@ function ovpn_cfg_dwn {
       do
         if [ "$vg_cntsh" == "${vpnsel_arr[idx]}" ]; then
           nr=$(($nr+1))
-          logger -s -t $snam "  create  $vg_filn1"
+          echo "  create  $vg_filn1"
           echo "$vg_score $vg_cntsh $vg_hname $vg_ipadr" >>$vg_filn2
           echo $vg_confg | base64 --decode 2>/dev/null | tr -d "\r" >$vg_filn1
           if [ "$nr" -eq "1" ]; then cp $vg_filn1 $vg_filn3; fi
@@ -321,7 +337,7 @@ function ovpn_refresh {
     if [ "$dodwn" == "yes" ]; then
       ovpn_cfg_dwn
     else
-      logger -s -t $snam "  file is recent ($vpngate)"
+      echo "  file is recent ($vpngate)"
     fi
 #   rm $vpngate >/dev/null 2>&1
   fi
@@ -345,10 +361,10 @@ function stop_ap_dev {
 function inst_ap_dev {
   wdev="$1"
   if [ "$wdev" != "$ap_dev" ] && [ "$wdev" != "" ]; then
-    logger -s -t $snam "  install & check dev $ap_dev"
+    echo "  install & check dev $ap_dev"
     apnet255=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $4 }'`
     if [ "$ap_subn" != "$apnet255" ]; then
-      logger -s -t $snam "  assign  dev $ap_dev $ap_ipanet on $wdev"
+      echo "  assign  dev $ap_dev $ap_ipanet on $wdev"
       iw dev $wdev interface add $ap_dev type __ap
       stop_ap_dev "$ap_dev"
 #     ip link set $ap_dev address $ap_devmac
@@ -357,9 +373,9 @@ function inst_ap_dev {
     fi
     apipn=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $2 }'`
     if [ "$apipn" == "$ap_ipanet" ]; then
-      logger -s -t $snam "  install dev $ap_dev on $wdev done"
+      echo "  install dev $ap_dev on $wdev done"
     else
-      logger -s -t $snam "  ERROR:  install dev $ap_dev"
+      echo "  ERROR:  install dev $ap_dev"
     fi
   fi
 }
@@ -369,16 +385,16 @@ function wlan {
   if [ "$2" != "" ]; then wl_dev="$2"; fi
   case "$1" in
         start)
-            logger -s -t $snam "  start   wlan    $wl_dev"
+            echo "  start   wlan    $wl_dev"
             systemctl restart dhcpcd
 #           wpa_cli -i $wl_dev reconfigure
             ;;
         stop)
-            logger -s -t $snam "  stop    wlan    $wl_dev"
+            echo "  stop    wlan    $wl_dev"
             wpa_cli -p $wpactrl -i $wl_dev terminate >/dev/null 2>&1
             ;;
         clean)
-            logger -s -t $snam "  clean   wlan    $wl_dev"
+            echo "  clean   wlan    $wl_dev"
             wpa_cli terminate >/dev/null 2>&1
             ip addr flush $wl_dev
             ip link set dev $wl_dev down
@@ -388,9 +404,9 @@ function wlan {
             if [ "$wl_dev" != "" ]; then
               status=`wpa_cli -i $wl_dev status | grep wpa_state`
               if [ "$status" != "wpa_state=COMPLETED" ]; then
-                logger -s -t $snam "  ERROR   wlan    $wl_dev $status"
+                echo "  ERROR   wlan    $wl_dev $status"
               else
-                logger -s -t $snam "  OK      wlan    $wl_dev"
+                echo "  OK      wlan    $wl_dev"
               fi
             fi
             ;;
@@ -417,19 +433,19 @@ function do_ovpn {
   if [ -d "$ovpndir" ]; then
     case "$1" in
         start)
-            logger -s -t $snam "  start   openvpn (experimental)"
+            echo "  start   openvpn (experimental)"
             ipt_do "del" "ap"
             ovpn_check_running
             ipt_do "add" "ovpn"
             openvpn $ovpn_opt &
             ;;
         stop)
-            logger -s -t $snam "  stop    openvpn (experimental)"
+            echo "  stop    openvpn (experimental)"
             ovpn_check_running
             ipt_do "del" "ovpn"
             ;;
         refresh)
-            logger -s -t $snam "  refresh openvpn config files (experimental)"
+            echo "  refresh openvpn config files (experimental)"
             ovpn_cfg_dwn
             ;;
         *)
@@ -437,7 +453,7 @@ function do_ovpn {
             exit 1
     esac
   else
-    logger -s -t $snam "ERROR ovpn not installed"
+    echo "ERROR ovpn not installed"
   fi
 }
 
@@ -446,13 +462,13 @@ function do_tor {
   if [ -d "$tordir" ]; then
     case "$1" in
         start)
-            logger -s -t $snam "  start   tor (experimental)"
+            echo "  start   tor (experimental)"
             ipt_do "del" "ap"
             ipt_do "add" "tor"
             service tor restart
             ;;
         stop)
-            logger -s -t $snam "  stop    tor (experimental)"
+            echo "  stop    tor (experimental)"
             service tor stop
             ipt_do "del" "tor"
             ;;
@@ -461,13 +477,13 @@ function do_tor {
             exit 1
     esac
   else
-    logger -s -t $snam "ERROR tor not installed"
+    echo "ERROR tor not installed"
   fi
 }
 
 function do_syslog {
   if [ "$1" != "" ]; then lins="-A $1"; else lins=""; fi
-  tail -500 /var/log/syslog | grep --color -a $lins "${snam}:"
+  tail -500 /var/log/syslog | grep --color -a $lins "${snam}"
 }
 
 function Find_Chan {
@@ -511,15 +527,15 @@ function Find_Chan {
 }
 
 function Mdfy_Chan {
-  logger -s -t $snam "  modify  channel strategy: $1 $2 $3"
+  echo "  modify  channel strategy: $1 $2 $3"
   ch="$2"
   if [ "$ch" == "" ]; then
     ch="$ch_dflt"
-    logger -s -t $snam "  using   default chan $ch"
+    echo "  using   default chan $ch"
   fi
   if [ "$ch" -le "14" ]; then hm="g"; else hm="a"; fi
   if [ "$ch" -ge "32" ]; then att="$ch (can cause problem)"; else att="$ch"; fi
-  logger -s -t $snam "  select  hw_mode $hm  chan $att"
+  echo "  select  hw_mode $hm  chan $att"
   Mod_Para "hostapd" "channel" "$ch"
   Mod_Para "hostapd" "hw_mode" "$hm"
 }
@@ -527,42 +543,42 @@ function Mdfy_Chan {
 function Hotspot_Start {
   Check_installed_PKG
   Hotspot_Defines
-  logger -s -t $snam "starting  hotspot $hotspotver"
-  logger -s -t $snam "  ETHER   $eth_dev    $eth_ip"
-  logger -s -t $snam "  WLANint $wl0_dev   $wl0_ip"
-  logger -s -t $snam "  WLANext $wl1_dev   $wl1_ip"
+  echo "starting  hotspot $hotspotver"
+  echo "  ETHER   $eth_dev    $eth_ip"
+  echo "  WLANint $wl0_dev   $wl0_ip"
+  echo "  WLANext $wl1_dev   $wl1_ip"
   chanh=`cat "$hostapdf" | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
   if [ "$chanh" != "0" ]; then
     if [ "$ap_share" != "yes" ] && { [ "$wl1_avail" == "yes" ] || [ "$eth_ip" != "" ]; }; then
       Find_Chan "$wl0_dev" "$ch_dflt" "$chanh" "$freq_filter"
-      logger -s -t $snam "  FndChan suggest channel $chanw"
+      echo "  FndChan suggest channel $chanw"
       msg="select channel for ap mode"
     else
       chanw=`iwlist $wl0_dev channel | awk '/urrent / { print $5 }' | sed 's/)//g'`
       msg="select same channel for ap & station mode on $wl0_dev"
-      logger -s -t $snam "  UseChan channel $chanw"
+      echo "  UseChan channel $chanw"
     fi
     if [ "$chanw" != "" ]; then
       Mdfy_Chan "$msg" "$chanw" "$chanh"
     fi
   else
-    logger -t $snam "  UseAuto channel selection"
+    echo "  UseAuto channel selection"
   fi
   if [ "$1" == "nowlan" ]; then wlan stop $wl0_dev; fi
-  logger -t $snam "  stop    hostapd"
+  echo "  stop    hostapd"
   systemctl stop hostapd
-  logger -t $snam "  stop    dnsmasq"
+  echo "  stop    dnsmasq"
   systemctl stop dnsmasq
   echo 1 > /proc/sys/net/ipv4/ip_forward
   inst_ap_dev $wl0_dev
   sleep 1
   ipt_wipe "cln" "ap"
   ipt_do   "add" "ap"
-  logger -s -t $snam "  start   hostapd restart"
+  echo "  start   hostapd restart"
   systemctl restart  hostapd
-  logger -s -t $snam "  start   dnsmasq"
+  echo "  start   dnsmasq"
   systemctl restart dnsmasq
-  logger -s -t $snam "started   hotspot"
+  echo "started   hotspot"
 
   if [ "$ovpnstart" == "yes" ] && [ -d "$ovpndir" ]; then
     if [ "$ovpnrefreshbeforestart" == "yes" ]; then
@@ -574,42 +590,42 @@ function Hotspot_Start {
   fi
 
   if [ "$nodogsplashstart" == "yes" ]; then
-    logger -s -t $snam "start     captive portal (nodogsplash)"
+    echo "start     captive portal (nodogsplash)"
     nodogsplash
   fi
   msg="`service hostapd status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
-  logger -s -t $snam "hostapd   $msg"
+  echo "hostapd   $msg"
   msg="`service dnsmasq status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
-  logger -s -t $snam "dnsmasq   $msg"
+  echo "dnsmasq   $msg"
 }
 
 function Hotspot_Try {
   Check_installed_PKG
-  logger -s -t $snam "trying    hotspot"
+  echo "trying    hotspot"
 # wait max. 15sec for wlan0 gets an IPadr from DHCP if eth0 is not connected
   i="0"
   while [ $i -le 15 ] && [ "$wl0_ip" = "" ] && [ "$eth_ip" = "" ]; do
     Hotspot_Defines
-    logger -s -t $snam "  DHCP    wait for IPadr on $wl0_dev $wl0_ip"
+    echo "  DHCP    wait for IPadr on $wl0_dev $wl0_ip"
 #   Show_Defines
     sleep 1          # let wlan settle
     i=$[$i+1]
   done
   if [ "$wl0_ip" = "" ]; then
-    logger -s -t $snam "  DHCP    no IPassignment on $wl0_dev"
+    echo "  DHCP    no IPassignment on $wl0_dev"
   fi
   if [ "$hs_try" == "yes" ] && [ "$ap_share" != "yes" ]; then
-    logger -s -t $snam "  try     hotspot"
+    echo "  try     hotspot"
     Hotspot_Start nowlan
   else
     if [ "$ap_share" == "yes" ]; then
       if [ "$wl0_subn" != "" ] && [ "$wl0_subn" != "$ap_subn" ]; then
-        logger -s -t $snam "  ap&sta  on $wl0_dev start hotspot in parallel to station mode"
-        logger -s -t $snam "  (not supported, use eth0 or additional usb wlan adaptor wlan1)"
-#       logger -s -t $snam "  starting hotspot, maybe this will fail"
+        echo "  ap&sta  on $wl0_dev start hotspot in parallel to station mode"
+        echo "  (not supported, use eth0 or additional usb wlan adaptor wlan1)"
+#       echo "  starting hotspot, maybe this will fail"
         Hotspot_Start wlan
       else
-        logger -s -t $snam "  ERROR   subnet conflict $eth_dev $eth_subn $wl0_dev $wl0_subn $ap_dev $ap_subn"
+        echo "  ERROR   subnet conflict $eth_dev $eth_subn $wl0_dev $wl0_subn $ap_dev $ap_subn"
       fi
     else
       logger   -s -t $snam "  PARAM   ap_share not set to yes"
@@ -620,25 +636,26 @@ function Hotspot_Try {
 
 function Hotspot_Stop {
   Check_installed_PKG
-  logger -s -t $snam "stopping  all ovpn instances"
+  echo "stopping  all ovpn instances"
   ovpn_check_running
-  logger -s -t $snam "stopping  hotspot"
-  logger -s -t $snam "  stop    hostapd"
+  echo "stopping  hotspot"
+  echo "  stop    hostapd"
   systemctl stop hostapd
   sleep 2
-  logger -s -t $snam "  stop    dnsmasq"
+  echo "  stop    dnsmasq"
   systemctl stop dnsmasq
   echo 0 > /proc/sys/net/ipv4/ip_forward
   ipt_do "del" "ap"
   sleep 2
   if [ "$1" != "nowlan" ]; then
+    systemctl daemon-reload
     wlan start $wl0_dev
     sleep 10
   fi
-  logger -s -t $snam "  link    down dev $ap_dev"
+  echo "  link    down dev $ap_dev"
   stop_ap_dev "$ap_dev"
   iw dev $ap_dev del
-  logger -s -t $snam "stopped   hotspot"
+  echo "stopped   hotspot"
 }
 
 function Setup_rclocal {
@@ -649,14 +666,11 @@ function Setup_rclocal {
   echo `date +"%Y-%m-%d %T"` "create $fil"
   cat <<EOF > "$fil"
 #!/bin/sh -e
-#file autocreated, do not edit
-#
-hotspot startmode try >>/tmp/hotspot.log 2>&1
+#file autocreated by hotspot, do not edit
 
 # Print the IP address
 _IP=\$(hostname -I) || true
 if [ "\$_IP" ]; then
-  logger -s -t hotspot "My IP address is \$_IP"
   printf "IP %s\nRaspbian GNU/Linux\n" "\$_IP" > /etc/issue
 else
   printf "Raspbian GNU/Linux\n" > /etc/issue
@@ -665,6 +679,32 @@ fi
 exit 0
 EOF
   chmod 750 "$fil"
+}
+
+function Setup_ServiceFile {
+  fil="/lib/systemd/system/hotspot.service"
+  fil_bck "$fil"  "$bckext"
+  echo `date +"%Y-%m-%d %T"` "create $fil"
+  cat <<EOF > "$fil"
+[Unit]
+Description=hotspot
+After=network.target syslog.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/usr/local/sbin
+ExecStart=/usr/local/sbin/hotspot try
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=hotspot
+#StandardOutput=file:/tmp/hotspot.log
+#StandardError=file:/tmp/hotspot.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  chmod 644 "$fil"
 }
 
 function Setup_sysctlconf {
@@ -852,7 +892,7 @@ EOF
   Mod_Para  "hostapd" "wpa_passphrase" "$spot_psk"
   Mod_Para  "hostapd" "country_code" "$spot_cntry2"
   Mod_Para  "crda"    "REGDOMAIN"    "$spot_cntry2"
-  Mod_Para  "self" "autostart" "yes"
+# Mod_Para  "self" "autostart" "yes"
   chmod 640 "$fil"
 }
 
@@ -895,6 +935,7 @@ function Hotspot_Setup {
   service tor stop  >/dev/null 2>&1
 
   bckext=`date +"%Y%m%d%H%M%S"`
+
   Setup_rclocal     $1 $2
   Setup_sysctlconf  $1 $2
   Setup_dhcpcdconf  $1 $2
@@ -902,6 +943,8 @@ function Hotspot_Setup {
   Setup_hostapddflt $1 $2
   Setup_hostapdconf $1 $2
   Setup_torcfg      $1 $2
+  Setup_ServiceFile $1 $2
+  Hotspot_Enable    $1 $2
 }
 
 Hotspot_Defines
@@ -916,16 +959,24 @@ case "$opt1" in
        stop)
             Hotspot_Stop  "$opt2"
             ;;
+     enable)
+            Hotspot_Enable "$opt2"
+            ;;
+    disable)
+            Hotspot_Disable "$opt2"
+            ;;
   startmode)
             case "$opt2" in
               try)
                 if [ "$autostart" == "yes" ]; then
-                  Hotspot_Try "$opt3"
+		   echo "ERR: since V0.960 not needed, started by systemd"
+#                 Hotspot_Try "$opt3"
                 fi
               ;;
               start)
                 if [ "$autostart" == "yes" ]; then
-                  Hotspot_Start "$opt3"
+		  echo "ERR: since V0.960 not needed, started by systemd"
+#                 Hotspot_Start "$opt3"
                 fi
               ;;
               *)
@@ -935,13 +986,13 @@ case "$opt1" in
             ;;
     restart)
             Hotspot_Stop   nowlan
-            logger -s -t $snam "  20sec  settle time"
+            echo "  20sec  settle time"
             sleep 20
             Hotspot_Start "$opt2"
             ;;
       retry)
             Hotspot_Stop   nowlan
-            logger -s -t $snam "  20sec  settle time"
+            echo "  20sec  settle time"
             sleep 20
             Hotspot_Try   "$opt2"
             ;;
@@ -983,7 +1034,7 @@ case "$opt1" in
             Show_Defines  "$opt2" "$opt3" "$opt4"
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [wipe] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | qrcode | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | enable | disable | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [wipe] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | qrcode | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
   exit 1
 esac
 
