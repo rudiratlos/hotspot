@@ -80,6 +80,7 @@ crdaf="/etc/default/crda"
 tordir="/etc/tor"
 torcfg="$tordir/torrc"
 hostn="`hostname`"
+usr="`whoami`"
 fbdev="/dev/fb0"
 qrshow="yes"
 qrdir="/tmp"
@@ -141,10 +142,10 @@ function qrcode_on_oled  {
 # qrcode_on_oled "x" "WIFI:S:$hostapd_ssid;T:WPA2;P:$hostapd_psk;;"
   if [ "$qrshow" == "yes" ] || [ "$1" == "interactive" ]; then
     if [ "$2" != "" ] && [ "$qrfile" != "" ]; then
-    if [ ! -d "$qrdir" ]; then mkdir -p $qrdir; fi 
+      if [ ! -d "$qrdir" ]; then mkdir -p $qrdir; fi 
       /usr/bin/qrencode -o "$qrfile" "$2"
       if [ -f "$qrfile" ] && [ -e "$fbdev" ]; then
-        echo "  QRcode  show $2"
+#       echo "  QRcode  show $2"
         /usr/bin/fbi -noverbose -T 1 -a -d "$fbdev" "$qrfile" 2>/dev/null
 #       rm "$qrfile"
       fi
@@ -755,7 +756,7 @@ function Mdfy_Chan {
 function Hotspot_Start {
   Check_installed_PKG
   Hotspot_Defines
-  echo "starting  $snam $hotspotver"
+  echo "starting  $snam $hotspotver usr:$usr"
   echo "  ETHER   $eth_dev    $eth_ip"
   echo "  WLANint $wl0_dev   $wl0_ip"
   echo "  WLANext $wl1_dev   $wl1_ip"
@@ -820,7 +821,7 @@ function Hotspot_Start {
 
 function Hotspot_Try {
   Check_installed_PKG
-  echo "trying    $snam $hotspotver"
+  echo "trying    $snam $hotspotver usr:$usr"
 # wait max. 15sec for wlan0 gets an IPadr from DHCP if eth0 is not connected
   i="0"
   while [ $i -le 15 ] && [ "$wl0_ip" = "" ] && [ "$eth_ip" = "" ]; do
