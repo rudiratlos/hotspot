@@ -1,0 +1,459 @@
+#!/bin/bash
+set +e
+fwdversion="V0.2"
+opt1="$1"
+opt2="$2"
+opt3="$3"
+opt4="$4"
+
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+NC="\033[0m" # No Color
+
+# setup for firewalld
+# flags: noFW INPUTaccept LOaccept ssh authelia ZeroConfig web LogDrop UPnP hostapd icmpvisible
+
+# defs
+perm="--permanent"
+permap="--permanent"
+zone="--zone=public"
+zoneap="--zone=trusted"
+ifap="ap0"
+ap_iptsubn="10.3.141.0/24"
+noif="lo $ifap"
+actn="add"
+if [ "$opt2" == "delete" ] || [ "$opt2" == "remove" ]; then actn="remove"; fi
+
+function mark {
+  export $1=`pwd`;
+}
+
+function _msg {
+  echo -e `date +"%Y-%m-%d %T"` "$1"
+}
+
+function _stamp {
+  _msg "$1$2 ##########################################################################"
+}
+
+function IPT_noFW {
+  _msg "FWD $1 filter: noFW $2 $3"
+  rm -rf /etc/firewalld/zones
+# Purge old iptables rules
+  iptables -t nat -F
+  iptables -t mangle -F
+  iptables -t nat -X
+  iptables -t mangle -X
+  iptables -t raw -F
+  iptables -t raw -X
+  for i in $(iptables -S | awk '{print $2}' | uniq ); do iptables -F $i && iptables -Z $i && iptables -X $i ; done
+# iptables -F
+# iptables -Z
+# iptables -X
+  iptables-save  > /etc/iptables/rules.v4
+  ip6tables-save > /etc/iptables/rules.v6
+  systemctl restart firewalld
+  systemctl restart nginx
+  return $?
+}
+
+function FWD_IFadd {
+  _msg "FWD $1 filter: IFadd $2 $3"
+  ret=1
+  for i in $( ifconfig -a | sed 's/[ \t].*//;/^\(\)$/d' | awk -F ":" '{ print $1 }' ); do
+    if [[ "$noif" != *"$i"* ]]; then
+      _msg "  add iface $i to $zone"
+      firewall-cmd $perm $zone --change-interface=$i
+      ret=$?
+    fi
+  done
+  return $ret
+}
+
+function IPT_notICMPvisible {
+  _msg "FWD $1 filter: notICMPvisible $2 $3"
+  firewall-cmd $3 $2 --$1-icmp-block=echo-request
+  return $?
+}
+
+function IPT_web {
+  _msg "FWD $1 filter: web $2 $3"
+  firewall-cmd $3 $2 --$1-service=http --$1-service=https
+  return $?
+}
+
+function IPT_sambaclient {
+  _msg "FWD $1 filter: sambaclient $2 $3"
+  firewall-cmd $3 $2 --$1-service=samba-client
+  return $?
+}
+
+function IPT_samba {
+  _msg "FWD $1 filter: samba $2 $3"
+  firewall-cmd $3 $2 --$1-service=samba
+  return $?
+}
+
+function IPT_mqtt {
+  _msg "FWD $1 filter: mqtt $2 $3"
+  firewall-cmd $3 $2 --$1-service=mqtt --$1-service=mqtt-tls
+  return $?
+}
+
+function IPT_mqttws {
+  _msg "FWD $1 filter: mqttws $2 $3"
+  firewall-cmd $3 $2 --$1-port=9001/tcp
+  return $?
+}
+
+function IPT_DNS {
+  _msg "FWD $1 filter: DNS $2 $3"
+  firewall-cmd $3 $2 --$1-service=dns
+  return $?
+}
+
+function IPT_ssh {
+  _msg "FWD $1 filter: ssh $2 $3"
+  firewall-cmd $3 $2 --$1-service=ssh
+  return $?
+}
+
+function IPT_mosh {
+  _msg "FWD $1 filter: mosh $2 $3"
+  firewall-cmd $3 $2 --$1-service=mosh
+  return $?
+}
+
+function IPT_rdp {
+  _msg "FWD $1 filter: rdp $2 $3"
+  firewall-cmd $3 $2 --$1-service=rdp
+  return $?
+}
+
+function IPT_rsync {
+  _msg "FWD $1 filter: rsync $2 $3"
+  firewall-cmd $3 $2 --$1-service=rsyncd
+  return $?
+}
+
+function IPT_CUPS {
+  _msg "FWD $1 filter: CUPS $2 $3"
+  firewall-cmd $3 $2 --$1-service=ipp
+  return $?
+}
+
+function IPT_openVPN {
+  _msg "FWD $1 filter: openVPN $2 $3"
+  firewall-cmd $3 $2 --$1-service=openvpn
+  return $?
+}
+
+function IPT_NTP {
+  _msg "FWD $1 filter: NTP $2 $3"
+  firewall-cmd $3 $2 --$1-service=ntp
+  return $?
+}
+
+function IPT_cntlm {
+  _msg "FWD $1 filter: cntlm $2 $3"
+  firewall-cmd $3 $2 --$1-service=squid
+  return $?
+}
+
+function IPT_Warpin {
+  _msg "FWD $1 filter: Warpin $2 $3"
+  firewall-cmd $3 $2 --$1-port=42000/tcp
+  return $?
+}
+
+function IPT_fcgi {
+  _msg "FWD $1 filter: fcgi $2 $3"
+  firewall-cmd $3 $2 --$1-port=2500/tcp
+  return $?
+}
+
+function IPT_nodered {
+  _msg "FWD $1 filter: nodered $2 $3"
+  firewall-cmd $3 $2 --$1-port=1880/tcp
+  return $?
+}
+
+function IPT_DHCPserver {
+  _msg "FWD $1 filter: DHCPserver $2 $3"
+  firewall-cmd $3 $2 --$1-service=dhcp
+  return $?
+}
+
+function IPT_syncthing {
+  _msg "FWD $1 filter: syncthing $2 $3"
+  firewall-cmd $3 $2 --$1-service=syncthing --$1-service=syncthing-gui
+  return $?
+}
+
+function IPT_shellinabox {
+  _msg "FWD $1 filter: shellinabox $2 $3"
+  firewall-cmd $3 $2 --$1-port=4200/tcp
+  return $?
+}
+
+function IPT_DHCPclient {
+  _msg "FWD $1 filter: DHCPclient $2 $3"
+  firewall-cmd $3 $2 --$1-service=dhcpv6-client
+  return $?
+}
+
+function IPT_ZeroConfig {
+  _msg "FWD $1 filter: ZeroConfig $2 $3"
+  firewall-cmd $3 $2 --$1-service=mdns
+  return $?
+}
+
+function IPT_UPnP {
+  _msg "FWD $1 filter: UPnP $2 $3"
+  firewall-cmd $3 $2 --$1-service=upnp-client
+  return $?
+}
+
+function IPT_nfs {
+  _msg "FWD $1 filter: nfs $2 $3"
+  firewall-cmd $3 $2 --$1-service=nfs --$1-service=nfs3 --$1-service=mountd --$1-service=rpc-bind
+  return $?
+}
+
+function IPT_FAUXMO {
+  _msg "FWD $1 filter: FAUXMO $2 $3"
+  firewall-cmd $3 $2 --$1-port=12340-12389/udp
+  firewall-cmd $3 $2 --$1-port=12340-12389/tcp
+  return $?
+}
+
+function IPT_ftp {
+  _msg "FWD $1 filter: ftp $2 $3"
+  firewall-cmd $3 $2 --$1-service=ftp
+#  firewall-cmd $3 $2 --$1-port=57000-58000/tcp # ports for passive ftp
+  return $?
+}
+
+function IPT_ftps {
+  _msg "FWD $1 filter: ftps $2 $3"
+  firewall-cmd $3 $2 --$1-port=989-990/tcp
+  return $?
+}
+
+function IPT_hostapd {
+  _msg "FWD $1 filter: hostapd $2 $3"
+  firewall-cmd $3 $zone --$1-masquerade
+  firewall-cmd $3 $2 --$1-interface=$ifap
+  firewall-cmd $3 $2 --$1-source=$ap_iptsubn
+  return $?
+}
+
+function IPT_redis {
+  _msg "FWD $1 filter: redis $2 $3"
+  firewall-cmd $3 $2 --$1-port=6379/tcp
+  return $?
+}
+
+function IPT_redisHA {
+  _msg "FWD $1 filter: redisHA $2 $3"
+  firewall-cmd $3 $2 --$1-port=16379/tcp
+  return $?
+}
+
+function IPT_authelia {
+  _msg "FWD $1 filter: authelia $2 $3"
+  IPT_redis "$1" "$2" "$3"
+  firewall-cmd $3 $2 --$1-port=9091/tcp
+  return $?
+}
+
+function FWD_reload {
+  _msg "FWD $1 filter: reload $2 $3"
+  firewall-cmd --reload
+  return $?
+}
+
+function FWD_list {
+  firewall-cmd --list-all
+  firewall-cmd --list-rich-rules
+  firewall-cmd --list-all-zones
+  firewall-cmd --get-active-zones
+  firewall-cmd --get-default-zone
+  firewall-cmd --get-zones
+  return=$?
+}
+
+ret=0
+case "$opt1" in
+  noFW)
+    IPT_noFW "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  IFadd)
+    FWD_IFadd "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  notICMPvisible)
+    IPT_notICMPvisible "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  web)
+    IPT_web "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  sambaclient)
+    IPT_sambaclient "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  samba)
+    IPT_samba "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  mqtt)
+    IPT_mqtt "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  mqttws)
+    IPT_mqttws "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  DNS)
+    IPT_DNS "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  ssh)
+    IPT_ssh "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  mosh)
+    IPT_mosh "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  rdp)
+    IPT_rdp "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  rsync)
+    IPT_rsync "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  CUPS)
+    IPT_CUPS "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  openVPN)
+    IPT_openVPN "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  NTP)
+    IPT_NTP "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  cntlm)
+    IPT_cntlm "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  Warpin)
+    IPT_Warpin "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  fcgi)
+    IPT_fcgi "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  nodered)
+    IPT_nodered "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  DHCPserver)
+    IPT_DHCPserver "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  syncthing)
+    IPT_syncthing "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  shellinabox)
+    IPT_shellinabox "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  DHCPclient)
+    IPT_DHCPclient "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  ZeroConfig)
+    IPT_ZeroConfig "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  UPnP)
+    IPT_UPnP "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  nfs)
+    IPT_nfs "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  FAUXMO)
+    IPT_FAUXMO "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  ftp)
+    IPT_ftp "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  ftps)
+    IPT_ftps "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  hostapd)
+    IPT_hostapd "$actn" "$zoneap" "$permap"
+    ret=$?
+    ;;
+  redis)
+    IPT_redis "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  redisHA)
+    IPT_redisHA "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  authelia)
+    IPT_authelia "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  reload)
+    FWD_reload "$actn" "$zone" "$perm"
+    ret=$?
+    ;;
+  4pump)
+    IPT_noFW "$actn" "$zone" "$perm"
+    ret=$?
+    FWD_IFadd "$actn" "$zone" "$perm"
+    ret=$?
+    IPT_web "$actn" "$zone" "$perm"
+    ret=$?
+    IPT_ssh "$actn" "$zone" "$perm"
+    ret=$?
+    IPT_ZeroConfig "$actn" "$zone" "$perm"
+    ret=$?
+    IPT_UPnP "$actn" "$zone" "$perm"
+    ret=$?
+    IPT_hostapd "$actn" "$zoneap" "$permap"
+    ret=$?
+    IPT_authelia "$actn" "$zone" "$perm"
+    ret=$?
+    FWD_reload "$actn" "$zone" "$perm"
+    ret=$?
+    systemctl restart nginx
+    ;;
+  list)
+    FWD_list "$opt2" "$opt3" "$opt4"
+    ret=$?
+    ;;
+  version)
+    echo "$fwdversion"
+    ;;
+  *)
+    echo "Usage: ${0##*/} 4pump | list | version | noFW | IFadd | notICMPvisible | web | sambaclient | samba | mqtt | mqttws | DNS | ssh | mosh | rdp | rsync | CUPS | openVPN | NTP | cntlm | Warpin | fcgi | nodered | DHCPserver | syncthing | shellinabox | DHCPclient | ZeroConfig | UPnP | nfs | FAUXMO | ftp | ftps | hostapd | redis | redisHA | authelia | reload"
+    ret=1
+esac
