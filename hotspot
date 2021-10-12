@@ -997,7 +997,7 @@ dhcp-option=44,$ap_ip    # set netbios-over-TCP/IP aka WINS
 dhcp-option=45,$ap_ip    # netbios datagram distribution server
 dhcp-option=46,8             # netbios node type
 dhcp-option=252,"\n"         # REQUIRED to get win7 to behave
-dhcp-option=160,http://$ap_ip/index.html # RFC 7710
+dhcp-option=160,http://10.3.141.1/index.html # RFC 7710
 
 # Include another configuration options
 #conf-file=/etc/dnsmasq.captiveportal.conf
