@@ -90,8 +90,8 @@ spot_ssid=`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/add
 spot_psk="hallohallo"
 spot_cntry2="`locale | awk -F"[_.]" '/LANG=/{print $2}'`"
 if [ "$spot_cntry2" == "" ]; then spot_cntry2="DE"; fi
-hostapd_ssid=`cat $hostapdf | grep ^ssid= | awk -F "=" '{ print $2 }'
-hostapd_psk=`cat $hostapdf | grep ^wpa_passphrase= | awk -F "=" '{ print $2 }'
+hostapd_ssid=`cat $hostapdf | grep ^ssid= | awk -F "=" '{ print $2 }'`
+hostapd_psk=`cat $hostapdf | grep ^wpa_passphrase= | awk -F "=" '{ print $2 }'`
 if [ "$hostapd_ssid" == "" ]; then hostapd_ssid="$spot_ssid"; hostapd_psk="$spot_psk"; fi
 
 ovpnsel="AT CH DE ES FR GB JP KR SC TW US"
