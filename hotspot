@@ -1,21 +1,21 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.960"
+snam="${0##*/}"
+
+hotspotver="V0.963"
 opt1="$1"
 opt2="$2"
 opt3="$3"
 opt4="$4"
-#
+
 autostart="yes"
-wipeiptables="yes"
 torstart="no"
 ovpnstart="no"
 ovpnrefreshbeforestart="yes"
 nodogsplashstart="no"
 aptaddinstlist="tor openvpn"
-#
-snam="hotspot"
+
 eth_dev="eth0"
 # freq_filter: 2|5 GHz band
 freq_filter="2"
@@ -40,7 +40,8 @@ ap_devmac="b8:27:eb:00:00:00"
 ap_net="10.3.141"
 ap_devext="$eth_dev"
 ns_dom="local"
-#
+
+ap_restricted="no"
 ap_share="no"
 ap_ip="${ap_net}.1"
 ap_subn="${ap_net}.255"
@@ -49,9 +50,15 @@ ap_iptsubn="${ap_net}.0/24"
 ap_revip=`echo "$ap_ip" | awk -F "." '{ print $4"."$3"."$2"."$1 }'`
 ap_revnet=`echo "$ap_ip" | awk -F "." '{ print $3"."$2"."$1 }'`
 ap_cauri="http://${ap_ip}/index.html"
-#
+
+# The UID that Tor runs as (varies from system to system)
+tor_uid=$(id -u debian-tor 2>/dev/null) #Debian/Ubuntu
+if [ "$tor_uid" == "" ]; then tor_uid=$(id -u tor 2>/dev/null); fi #ArchLinux/Gentoo
+if [ "$tor_uid" == "" ]; then tor_uid="109"; fi #As per assumption
+tor_trans_port="9050"
+tor_dns_port="53053"
 tor_subn="10.192.0.0/10"
-#
+
 if [ "$wl0_dev" == "" ]; then
 # internal wlan adapter
   wl0_devs=`ls -l --full-time /sys/class/net/ 2>/dev/null | grep -iE "mmc.*wlan" | cut -d" " -f9`
@@ -63,7 +70,7 @@ if [ "$wl1_dev" == "" ]; then
   wl1_devs=`ls -l --full-time /sys/class/net/ 2>/dev/null | grep -iE "usb.*wlan" | cut -d" " -f9`
   wl1_dev=`echo "$wl1_devs" | awk -F " " '{ print $1 }'`
 fi
-#
+
 wpactrl="/var/run/wpa_supplicant"
 wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
 hostapdf="/etc/hostapd/hostapd.conf"
@@ -75,12 +82,13 @@ torcfg="$tordir/torrc"
 hostn="`hostname`"
 fbdev="/dev/fb0"
 qrshow="yes"
+qrfile="/var/lib/BASIS/pump/www/qrcode.png"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
 spot_cntry2="`locale | awk -F"[_.]" '/LANG=/{print $2}'`"
 if [ "$spot_cntry2" == "" ]; then spot_cntry2="DE"; fi
-#
+
 ovpnsel="AT CH DE ES FR GB JP KR SC TW US"
 ovpndir="/etc/openvpn/client"
 vpngate="${ovpndir}/vpngate.csv"
@@ -89,21 +97,46 @@ ovpncfg="vpngate_bestscore.ovpn"
 ovpnpwd="vpngate.pwd"
 ovpncfgpath="${ovpndir}/${ovpncfg}"
 ovpnpwdpath="${ovpndir}/${ovpnpwd}"
+if [ "$ovpnpwd" == "" ]; then
+  ovpn_opt="--auth-nocache --config $ovpncfgpath"
+else
+  ovpn_opt="--auth-nocache --config $ovpncfgpath --auth-user-pass $ovpnpwdpath"
+fi
 ovpn_dev="`cat $ovpncfgpath 2>/dev/null | grep -E "^.{0}dev " | awk -F " " '{print $2}'`"
 if [ "$ovpn_dev" == "" ] || [ "$ovpn_dev" == "tun" ]; then ovpn_dev="tun0"; fi
-if [ "$ovpnpwd" == "" ]; then
-  ovpn_opt="--config $ovpncfgpath"
-else
-  ovpn_opt="--config $ovpncfgpath --auth-user-pass $ovpnpwdpath"
-fi
+
+fwdnoif="lo $ap_dev $ovpn_dev"
+pubzone="--zone=public"
+apperm=""
+apzone="--zone=home"
+ovpnzone="--zone=block"
+ovpnzone="$pubzone"
+trustzone="--zone=trusted"
+
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+NC="\033[0m" # No Color
+
+function _msgdat { echo -e `date +"%Y-%m-%d %T"` "$1"; }
+function _msg    { echo -e "$1"; }
+function _msgerr { _msg "${RED}ERR:${NC} $1 $2"; }
+function _msgsuc { _msg "${GREEN}SUC:${NC} $1 $2"; }
+
+function showip {
+  if [ "$2" == "wait" ]; then
+    sleep 30  # let vpn come up
+  fi
+   _extip=$(curl -s http://whatismyip.akamai.com/)
+  _msgdat "$snam show my external $1 ip $_extip"
+  curl https://myip.expert/
+}
 
 function qrcode_on_oled  {
 # show access info on a small OLED screen
 # qrcode_on_oled "x" "http://xx.xx.xx.xx"
 # qrcode_on_oled "x" "WIFI:S:$spot_ssid;T:WPA2;P:$spot_psk;;"
   if [ "$qrshow" == "yes" ] || [ "$1" == "interactive" ]; then
-    if [ "$2" != "" ]; then
-      qrfile="/tmp/qrcode.png"
+    if [ "$2" != "" ] && [ "$qrfile" != "" ]; then
       /usr/bin/qrencode -o "$qrfile" "$2"
       if [ -f "$qrfile" ] && [ -e "$fbdev" ]; then
         echo "  QRcode  show $2"
@@ -115,13 +148,13 @@ function qrcode_on_oled  {
 }
 
 function Show_Defines {
-  echo `date +"%Y-%m-%d %T"` "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
-  echo `date +"%Y-%m-%d %T"` "wl0_dev:$wl0_dev wl0_subn:$wl0_subn wl0_ip:$wl0_ip"
-  echo `date +"%Y-%m-%d %T"` "wl1_dev:$wl1_dev wl1_subn:$wl1_subn wl1_ip:$wl1_ip"
-  echo `date +"%Y-%m-%d %T"` "ap_shar:$ap_share hs_try:$hs_try $wl1_dev avail: $wl1_avail"
-  echo `date +"%Y-%m-%d %T"` "wl0_dev:$wl0_dev wl0_devs: $wl0_devs"
-  echo `date +"%Y-%m-%d %T"` "wl1_dev:$wl1_dev wl1_devs: $wl1_devs"
-  echo `date +"%Y-%m-%d %T"` "apdvext:$ap_devext"
+  echo "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
+  echo "wl0_dev:$wl0_dev wl0_subn:$wl0_subn wl0_ip:$wl0_ip"
+  echo "wl1_dev:$wl1_dev wl1_subn:$wl1_subn wl1_ip:$wl1_ip"
+  echo "ap_shar:$ap_share hs_try:$hs_try $wl1_dev avail: $wl1_avail"
+  echo "wl0_dev:$wl0_dev wl0_devs: $wl0_devs"
+  echo "wl1_dev:$wl1_dev wl1_devs: $wl1_devs"
+  echo "apdvext:$ap_devext"
 }
 
 function Hotspot_Defines {
@@ -147,10 +180,11 @@ function Hotspot_Defines {
   then
     acc_info="WIFI:S:$spot_ssid;T:WPA2;P:$spot_psk;;"
   else
-    if [ "$wl1_ip" != "" ]; then acc_info="http://$wl1_ip"; fi
-    if [ "$eth_ip" != "" ]; then acc_info="http://$eth_ip"; fi
-    if [ "$wl0_ip" != "" ]; then acc_info="http://$wl0_ip"; fi
-    acc_info=`echo "$acc_info" | awk -F "/" '{ print $3 }'`
+    if [ "$wl1_ip" != "" ];   then acc_info="$wl1_ip"; fi
+    if [ "$eth_ip" != "" ];   then acc_info="$eth_ip"; fi
+    if [ "$wl0_ip" != "" ];   then acc_info="$wl0_ip"; fi
+    acc_info=`echo "$acc_info" | awk -F "/" '{ print $1 }'`
+    if [ "$acc_info" != "" ]; then acc_info="http://$acc_info"; fi
 #   echo "$acc_info"
   fi
 
@@ -167,8 +201,8 @@ function fil_bck {
 }
 
 function Hotspot_Status {
-  echo `date +"%Y-%m-%d %T"` "Status Hotspot ..."
-  systemctl -n50 status hotspot
+  _msg "Status $snam ..."
+  systemctl -n50 status $snam
   echo ""
   ps ax | grep wpa_
   echo ""
@@ -179,11 +213,11 @@ function Hotspot_Status {
 
 function Check_installed_PKG {
 # Check that what we need is installed
-  for command in iw iptables hostapd dnsmasq; do
+  for command in iw firewalld hostapd dnsmasq; do
     if [ "$command" != "" ]; then
       which $command 2>&1 >/dev/null
       if (( $? != 0 )); then
-        echo "  ERROR:  $command is not installed (use $snam setup)"
+        _msgerr "  $command is not installed (use $snam setup)"
         exit -1
       fi
     fi
@@ -208,7 +242,7 @@ function Mod_Para {
     case "$1" in
       ovpnpwd) echo -e "$2\n$3" > $cfil ;;
       ovpncfg|torcfg) sed -i -r "s/^$2[ ]* .*/$2 $3/g" "$cfil" ;;
-      self) sed -i -r "s/^$2[ ]*=.*/$2=\"$3\"/g" "$cfil" ;;
+      self) sed -i -r "s&^$2[ ]*=.*&$2=\"$3\"&g" "$cfil" ;;
       *) sed -i -r "s/^$2[ ]*=.*/$2=$3/g" "$cfil" ;;
     esac
   else
@@ -218,13 +252,13 @@ function Mod_Para {
 }
 
 function Hotspot_Enable  {
-  echo `date +"%Y-%m-%d %T"` "Enable Hotspot service ..."
-  systemctl enable  hotspot.service
+  _msg "Enable $snam service ..."
+  systemctl enable  $snam.service
 }
 
 function Hotspot_Disable  {
-  echo `date +"%Y-%m-%d %T"` "Disable Hotspot service ..."
-  systemctl disable  hotspot.service
+  _msg "Disable $snam service ..."
+  systemctl disable  $snam.service
 }
 
 function ipt_cln {
@@ -261,14 +295,16 @@ function ipt_ovpn {
 }
 
 function ipt_tor {
-  echo "  ipt     tor  $1 $ap_dev (using ports 22 53 9040)"
-  iptables -t nat $1 PREROUTING -i $ap_dev -p tcp --dport 22 -j REDIRECT --to-ports 22
-  iptables -t nat $1 PREROUTING -i $ap_dev -p udp --dport 53 -j REDIRECT --to-ports 53
-  iptables -t nat $1 PREROUTING -i $ap_dev -p tcp --syn -j REDIRECT --to-ports 9040
+  echo "  ipt     tor  $1 $ap_dev (using ports 53 $tor_dns_port $tor_trans_port)"
+  iptables -F
+  iptables -t nat -F  
+  iptables -t nat $1 PREROUTING -i $ap_dev -p udp --dport 53 -j REDIRECT --to-ports $tor_dns_port
+  iptables -t nat $1 PREROUTING -i $ap_dev -p udp --dport $tor_dns_port -j REDIRECT --to-ports $tor_dns_port
+  iptables -t nat $1 PREROUTING -i $ap_dev -p tcp --syn -j REDIRECT --to-ports $tor_trans_port
 }
 
 function ipt_do {
-  if [ "$1" == "add" ] || [ "$1" == "del" ]; then
+  if [ "$1" == "add" ] || [ "$1" == "del" ] || [ "$1" == "remove" ]; then
     echo "  ipt     $1 $2"
     if [ "$1" == "add" ];  then opt="-A"; else opt="-D"; fi
     if [ "$2" == "tor" ];  then ipt_tor  "$opt"; fi
@@ -279,11 +315,167 @@ function ipt_do {
   fi
 }
 
-function ipt_wipe {
-  if [ "$wipeiptables" == "yes" ]; then
-    ipt_cln "wipe" "$2"
-    ipt_chains
+function fwd_list {
+  case "$1" in
+    all)      firewall-cmd --list-all ;;
+    allzones) firewall-cmd --list-all-zones ;;
+    active)   firewall-cmd --list-all-zones | awk '!/^[[:blank:]]/ && /active/ {p=1} !/^[[:blank:]]/ && !/active/ {p=0} p' ;;
+    *) echo "Usage: $snam fwd list [all|active]" ;; 
+  esac  
+}
+
+function fwd_log {
+  case "$1" in
+    all) firewall-cmd --set-log-denied=all ;;
+    off) firewall-cmd --set-log-denied=off ;;
+    *) echo "Usage: $snam fwd log [all|off]" ;; 
+  esac  
+}
+
+function fwd_wipe {
+  step="fwd_wipe"
+  _ret=1
+  rm -rf /etc/firewalld/zones > /dev/null 2>&1
+# Purge old iptables rules
+  iptables -t nat -F > /dev/null 2>&1
+  iptables -t mangle -F > /dev/null 2>&1
+  iptables -t nat -X > /dev/null 2>&1
+  iptables -t mangle -X > /dev/null 2>&1
+  iptables -t raw -F > /dev/null 2>&1
+  iptables -t raw -X > /dev/null 2>&1
+  for i in $(iptables -S | awk '{print $2}' | uniq ); do 
+    iptables -F $i > /dev/null 2>&1
+    iptables -Z $i > /dev/null 2>&1 
+    iptables -X $i > /dev/null 2>&1
+  done
+# iptables -F > /dev/null 2>&1
+# iptables -Z > /dev/null 2>&1
+# iptables -X > /dev/null 2>&1
+# iptables-save  > /etc/iptables/rules.v4
+# ip6tables-save > /etc/iptables/rules.v6
+  systemctl restart firewalld
+  _ret=$?
+  return $_ret
+}
+
+function fwd_def {
+# 1:add|remove 2:service|port|interface|... [3:value] [4:"--permanent"] [5:"--zone=<zone>"] [6:step]
+# /usr/lib/firewalld/services
+  _ret=1
+  _mode=""
+  _errf="/tmp/ERR_fwd_def.txt"
+  _step="$6"
+  _zone="$5"
+  _perm="$4"
+  _valu="$3"
+  if [ "$_valu" != "" ]; then _valu="=$_valu"; fi
+  if [ "$_step" == "" ]; then _step="fwd_def"; fi
+# if [ "$_zone" != "$apzone" ] && [ "$_zone" != "$pubzone" ]; then _zone="$apzone"; fi
+  if [ "$_zone" == "" ]; then _zone="$apzone"; fi
+  if [ "$1" != "" ] && [ "$2" != "" ]; then
+    echo "  $_step $1 $2 $3 $_zone $_perm"
+#   echo "firewall-cmd $_perm $_zone --$1-$2$_valu"
+    firewall-cmd $_perm $_zone --$1-$2$_valu >$_errf 2>&1
+    _ret=$?
+    if [ $_ret -ne 0 ] && [ "$_mode" == "test" ]; then 
+      _msgerr "$_ret $step: firewall-cmd $_perm $_zone --$1-$2$_valu"
+      cat $_errf
+      rm  $_errf
+    fi
+  else
+    _msgerr "  fwd_def missing param #1[add|remove] #2[service|port|...]"
   fi
+  return $_ret
+}
+
+function fwd_if {
+# 1:add|remove [2:opt-permanent]
+  step="fwd_if"
+# _msg "  $step $1 $2"
+  ret=1
+  for i in $( ifconfig -a | sed 's/[ \t].*//;/^\(\)$/d' | awk -F ":" '{ print $1 }' ); do
+    if [[ "$fwdnoif" != *"$i"* ]]; then
+      fwd_def "$1" interface "$i" "$2" "$pubzone" "$step "
+      ret=$?
+    fi
+  done
+  return $ret
+}
+
+function fwd_ovpn {
+# 1:add|remove [2:"--permanent"]
+  step="fwdovpn"
+  _ret=1
+  if [ "$1" == "add" ]
+    then _act1="add"; _act2="remove";
+    else _act2="add"; _act1="remove";  
+  fi
+  fwd_def "$_act1" service   openvpn     "$2" "$apzone"   "$step"
+  fwd_def "$_act1" interface "$ovpn_dev" "$2" "$ovpnzone" "$step"
+  _ret=$?
+  fwd_if  "$_act2" "$2" 
+  return $_ret
+}
+
+function fwd_tor {
+# Anonymizing Middlebox: https://gitlab.torproject.org/legacy/trac/-/wikis/doc/TransparentProxy
+# 1:add|remove [2:"--permanent"]
+  step="fwd_tor"
+  mode="" 
+  _errf="/tmp/ERR_fwd_tor.txt"
+  rm  $_errf >/dev/null 2>&1
+# fwd_def "$1" service "tor-socks" "$2" "$apzone" "$step"
+  iptables -F
+  iptables -t nat -F
+  firewall-cmd $2 --direct --$1-rule ipv4 nat PREROUTING 0 -i $ap_dev -p udp --dport 53 -j REDIRECT --to-ports $tor_dns_port >>$_errf 2>&1
+  firewall-cmd $2 --direct --$1-rule ipv4 nat PREROUTING 0 -i $ap_dev -p udp --dport $tor_dns_port -j REDIRECT --to-ports $tor_dns_port >>$_errf 2>&1
+  firewall-cmd $2 --direct --$1-rule ipv4 nat PREROUTING 0 -i $ap_dev -p tcp --syn -j REDIRECT --to-ports $tor_trans_port >>$_errf 2>&1
+  _ret=$?
+  if [ $_ret -ne 0 ] && [ "$_mode" == "test" ]; then 
+    _msgerr "$_ret $step"
+    cat $_errf
+    rm  $_errf >/dev/null 2>&1
+  fi
+  return $_ret
+}
+
+function fwd_ap {
+# 1:add|remove [2:"--permanent"]
+  step="fwd_ap"
+  fwd_def   "$1"     masquerade ""            "$2" "$pubzone"   "$step "
+  if [ "$ap_restricted" == "yes" ]; then
+    fwd_def "$1"     interface  "$ap_dev"     "$2" "$apzone"    "$step "
+    _ret=$?
+    fwd_def "$1"     service    http          "$2" "$apzone"    "$step "
+    fwd_def "$1"     service    https         "$2" "$apzone"    "$step "
+    fwd_def "$1"     service    dns           "$2" "$apzone"    "$step "
+    fwd_def "$1"     service    dhcp          "$2" "$apzone"    "$step "
+#   fwd_def "$1"     service    upnp-client   "$2" "$apzone"    "$step "
+#   fwd_def "$1"     service    ntp           "$2" "$apzone"    "$step "
+#   fwd_def "remove" service    samba-client  "$2" "$apzone"    "$step " # default service not required
+  else
+    fwd_def "$1"     interface  "$ap_dev"     "$2" "$trustzone" "$step "
+    _ret=$?
+    fwd_def "$1"     source     "$ap_iptsubn" "$2" "$trustzone" "$step "
+  fi
+  return $_ret
+}
+
+function fwd_do {
+# 1:add|del|remove 2:servicename
+  step="fwd_do"
+  _ret=1
+  if [ "$1" == "add" ] || [ "$1" == "remove" ]; then
+    if [ "$1" == "add" ];    then _opt="add"; else _opt="remove"; fi
+    echo "  $step $opt $2"
+    if [ "$2" == "ap" ];     then fwd_ap   "$_opt" "$apperm"; _ret=$?; fi
+    if [ "$2" == "tor" ];    then fwd_tor  "$_opt" "$apperm"; _ret=$?; fi
+    if [ "$2" == "torold" ]; then ipt_do   "$_opt" "tor";     _ret=$?; fi
+    if [ "$2" == "ovpn" ];   then fwd_ovpn "$_opt" "$apperm"; _ret=$?; fi
+  else
+    _msgerr "  $step  invalid option $1 $2 $3 $4"
+  fi
+  return $_ret
 }
 
 function ovpn_cfg_dwn {
@@ -416,14 +608,22 @@ function wlan {
   esac
 }
 
-function do_iptab {
+function do_fwd {
   case "$1" in
         wipe)
-            ipt_cln "flush"
-            ipt_chains
+            fwd_wipe "$2" "$3" "$2"
+            ;;
+        inst)
+            fwd_do "$2" "$3" "$4"
+            ;;
+        list)
+        	fwd_list "$2" "$3" "$4"
+        	;;
+        log)
+            fwd_log "$2" "$3" "$4"
             ;;
         *)
-            echo "Usage: $snam ipt wipe"
+            echo "Usage: $snam fwd wipe | inst | list | log"
             exit 1
   esac
 }
@@ -433,19 +633,18 @@ function do_ovpn {
   if [ -d "$ovpndir" ]; then
     case "$1" in
         start)
-            echo "  start   openvpn (experimental)"
-            ipt_do "del" "ap"
+            echo "  start   openvpn"
             ovpn_check_running
-            ipt_do "add" "ovpn"
+            fwd_do "add" "ovpn"
             openvpn $ovpn_opt &
             ;;
         stop)
-            echo "  stop    openvpn (experimental)"
+            echo "  stop    openvpn"
             ovpn_check_running
-            ipt_do "del" "ovpn"
+            fwd_do "remove" "ovpn"
             ;;
         refresh)
-            echo "  refresh openvpn config files (experimental)"
+            echo "  refresh openvpn config files"
             ovpn_cfg_dwn
             ;;
         *)
@@ -453,7 +652,7 @@ function do_ovpn {
             exit 1
     esac
   else
-    echo "ERROR ovpn not installed"
+    _msgerr "ovpn not installed"
   fi
 }
 
@@ -463,21 +662,28 @@ function do_tor {
     case "$1" in
         start)
             echo "  start   tor (experimental)"
-            ipt_do "del" "ap"
-            ipt_do "add" "tor"
-            service tor restart
+            fwd_do "add" "tor"
+#           service dnsmasq stop
+            service tor     restart
+#fwd_list active
+#iptables -t nat -nvL PREROUTING
+#netstat -tulpn
+            echo "  check   tor functionality: https://check.torproject.org/"
+#           fwd_log all
             ;;
         stop)
-            echo "  stop    tor (experimental)"
-            service tor stop
-            ipt_do "del" "tor"
+            echo "  stop    tor"
+            service tor     stop
+            fwd_do "remove" "tor"
+#           service dnsmasq restart
+#           fwd_log off
             ;;
         *)
             echo "Usage: $snam tor start|stop"
             exit 1
     esac
   else
-    echo "ERROR tor not installed"
+    _msgerr "tor not installed"
   fi
 }
 
@@ -496,8 +702,8 @@ function Find_Chan {
   if [ "$ch_autofind" -gt "0" ]; then
     if [ "$1" != "" ]; then
       fil="/tmp/$1_$4_scan.txt"
-      iwlist $1 chan | grep -i " : $4" | sed 's/  //g' | sed 's/Channel 0//g' | sed 's/Channel //g' | awk -F " " '{ print $1 }' > $fil
-      iwlist $1 scan | grep -i "Frequency:$4" | sort | uniq -c | sort -n | sed 's/  //g' | sed 's/)//g' | awk -F " " '{ print $5 }' >> $fil
+      iwlist $1 chan 2>/dev/null | grep -i " : $4" | sed 's/  //g' | sed 's/Channel 0//g' | sed 's/Channel //g' | awk -F " " '{ print $1 }' > $fil
+      iwlist $1 scan 2>/dev/null | grep -i "Frequency:$4" | sort | uniq -c | sort -n | sed 's/  //g' | sed 's/)//g' | awk -F " " '{ print $5 }' >> $fil
       linr=0
       ch_prio_arr=($ch_prio)
       while read line
@@ -543,7 +749,7 @@ function Mdfy_Chan {
 function Hotspot_Start {
   Check_installed_PKG
   Hotspot_Defines
-  echo "starting  hotspot $hotspotver"
+  echo "starting  $snam $hotspotver"
   echo "  ETHER   $eth_dev    $eth_ip"
   echo "  WLANint $wl0_dev   $wl0_ip"
   echo "  WLANext $wl1_dev   $wl1_ip"
@@ -572,36 +778,43 @@ function Hotspot_Start {
   echo 1 > /proc/sys/net/ipv4/ip_forward
   inst_ap_dev $wl0_dev
   sleep 1
-  ipt_wipe "cln" "ap"
-  ipt_do   "add" "ap"
+
+  fwd_do   "add" "ap"
   echo "  start   hostapd restart"
   systemctl restart  hostapd
   echo "  start   dnsmasq"
   systemctl restart dnsmasq
-  echo "started   hotspot"
-
-  if [ "$ovpnstart" == "yes" ] && [ -d "$ovpndir" ]; then
-    if [ "$ovpnrefreshbeforestart" == "yes" ]; then
-      ovpn_refresh
-    fi
-    do_ovpn start
-  else
-    if [ "$torstart" == "yes" ]; then do_tor start; fi
-  fi
-
+  
   if [ "$nodogsplashstart" == "yes" ]; then
     echo "start     captive portal (nodogsplash)"
     nodogsplash
   fi
+
+  if [ "$ovpnstart" == "yes" ] && [ -d "$ovpndir" ]; then
+    if [ "$ovpnrefreshbeforestart" == "yes" ]; then ovpn_refresh; fi
+#   _msgdat "ovpn start"
+    do_ovpn start
+    showip "ovpn" "wait"
+  else
+    fwd_if  add "$apperm" 
+    fwd_def remove interface "$ovpn_dev" "$2" "$ovpnzone" "Hotspot_Start"    
+  fi
+  
+  if [ "$torstart" == "yes" ]; then 
+    do_tor start "$apperm"
+#   showip "tor" "wait"
+  else
+    msg="`service dnsmasq status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
+    echo "dnsmasq   $msg"
+  fi
   msg="`service hostapd status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
   echo "hostapd   $msg"
-  msg="`service dnsmasq status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
-  echo "dnsmasq   $msg"
+# echo "started   $snam"
 }
 
 function Hotspot_Try {
   Check_installed_PKG
-  echo "trying    hotspot"
+  echo "trying    $snam $hotspotver"
 # wait max. 15sec for wlan0 gets an IPadr from DHCP if eth0 is not connected
   i="0"
   while [ $i -le 15 ] && [ "$wl0_ip" = "" ] && [ "$eth_ip" = "" ]; do
@@ -615,14 +828,14 @@ function Hotspot_Try {
     echo "  DHCP    no IPassignment on $wl0_dev"
   fi
   if [ "$hs_try" == "yes" ] && [ "$ap_share" != "yes" ]; then
-    echo "  try     hotspot"
+    echo "  try     $snam"
     Hotspot_Start nowlan
   else
     if [ "$ap_share" == "yes" ]; then
       if [ "$wl0_subn" != "" ] && [ "$wl0_subn" != "$ap_subn" ]; then
-        echo "  ap&sta  on $wl0_dev start hotspot in parallel to station mode"
+        echo "  ap&sta  on $wl0_dev start $snam in parallel to station mode"
         echo "  (not supported, use eth0 or additional usb wlan adaptor wlan1)"
-#       echo "  starting hotspot, maybe this will fail"
+#       echo "  starting $snam, maybe this will fail"
         Hotspot_Start wlan
       else
         echo "  ERROR   subnet conflict $eth_dev $eth_subn $wl0_dev $wl0_subn $ap_dev $ap_subn"
@@ -638,14 +851,14 @@ function Hotspot_Stop {
   Check_installed_PKG
   echo "stopping  all ovpn instances"
   ovpn_check_running
-  echo "stopping  hotspot"
+  echo "stopping  $snam"
   echo "  stop    hostapd"
   systemctl stop hostapd
   sleep 2
   echo "  stop    dnsmasq"
   systemctl stop dnsmasq
   echo 0 > /proc/sys/net/ipv4/ip_forward
-  ipt_do "del" "ap"
+  fwd_do "remove" "ap"
   sleep 2
   if [ "$1" != "nowlan" ]; then
     systemctl daemon-reload
@@ -655,7 +868,7 @@ function Hotspot_Stop {
   echo "  link    down dev $ap_dev"
   stop_ap_dev "$ap_dev"
   iw dev $ap_dev del
-  echo "stopped   hotspot"
+  echo "stopped   $snam"
 }
 
 function Setup_rclocal {
@@ -663,10 +876,10 @@ function Setup_rclocal {
   fil2="/etc/issue"
   fil_bck "$fil"  "$bckext"
   fil_bck "$fil2" "$bckext"
-  echo `date +"%Y-%m-%d %T"` "create $fil"
+  _msg "create $fil"
   cat <<EOF > "$fil"
 #!/bin/sh -e
-#file autocreated by hotspot, do not edit
+#file autocreated by $snam, do not edit
 
 # Print the IP address
 _IP=\$(hostname -I) || true
@@ -682,24 +895,24 @@ EOF
 }
 
 function Setup_ServiceFile {
-  fil="/lib/systemd/system/hotspot.service"
+  fil="/lib/systemd/system/$snam.service"
   fil_bck "$fil"  "$bckext"
-  echo `date +"%Y-%m-%d %T"` "create $fil"
+  _msg "create $fil"
   cat <<EOF > "$fil"
 [Unit]
-Description=hotspot
+Description=$snam
 After=network.target syslog.target
 Wants=network.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=/usr/local/sbin
-ExecStart=/usr/local/sbin/hotspot try
+ExecStart=/usr/local/sbin/$snam try
 StandardOutput=syslog
 StandardError=syslog
-SyslogIdentifier=hotspot
-#StandardOutput=file:/tmp/hotspot.log
-#StandardError=file:/tmp/hotspot.log
+SyslogIdentifier=$snam
+#StandardOutput=file:/tmp/$snam.log
+#StandardError=file:/tmp/$snam.log
 
 [Install]
 WantedBy=multi-user.target
@@ -719,7 +932,7 @@ function Setup_sysctlconf {
 function Setup_dhcpcdconf {
   fil="/etc/dhcpcd.conf"
   fil_bck "$fil" "$bckext"
-  echo `date +"%Y-%m-%d %T"` "create $fil"
+  _msg "create $fil"
   cat <<EOF > "$fil"
 hostname
 clientid
@@ -746,7 +959,7 @@ EOF
 function Setup_dnsmasqconf {
   fil="/etc/dnsmasq.conf"
   fil_bck "$fil" "$bckext"
-  echo `date +"%Y-%m-%d %T"` "create $fil"
+  _msg "create $fil"
   cat <<EOF > "$fil"
 dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
 dhcp-mac=set:client_is_a_pi,DC:A6:32:*:*:*
@@ -808,7 +1021,7 @@ EOF
 
   fil="/etc/dnsmasq.captiveportal.conf"
   fil_bck "$fil" "$bckext"
-  echo `date +"%Y-%m-%d %T"` "create $fil"
+  _msg "create $fil"
   cat <<EOF > "$fil"
 #file autocreated, do not edit (2020-06-01 12:37:02)
 
@@ -841,7 +1054,7 @@ EOF
 function Setup_hostapddflt {
   fil="/etc/default/hostapd"
   fil_bck "$fil" "$bckext"
-  echo `date +"%Y-%m-%d %T"` "create $fil"
+  _msg "create $fil"
   cat <<EOF > "$fil"
 #RUN_DAEMON=yes
 DAEMON_CONF="/etc/hostapd/hostapd.conf"
@@ -852,7 +1065,7 @@ EOF
 function Setup_hostapdconf {
   fil="/etc/hostapd/hostapd.conf"
   fil_bck "$fil" "$bckext"
-  echo `date +"%Y-%m-%d %T"` "create $fil"
+  _msg "create $fil"
   cat <<EOF > "$fil"
 ctrl_interface=/var/run/hostapd
 ctrl_interface_group=0
@@ -886,7 +1099,7 @@ logger_syslog_level=4
 logger_stdout=-1
 logger_stdout_level=4
 EOF
-  echo `date +"%Y-%m-%d %T"` "$snam:   setting default (pls. adjust ssid, wpa_passphrase, country_code and REGDOMAIN)"
+  _msg "$snam:   setting default (pls. adjust ssid, wpa_passphrase, country_code and REGDOMAIN)"
   Mdfy_Chan "select default channel"
   Mod_Para  "hostapd" "ssid" "$spot_ssid"
   Mod_Para  "hostapd" "wpa_passphrase" "$spot_psk"
@@ -900,14 +1113,17 @@ function Setup_torcfg {
   if [ -d "$tordir" ]; then
     fil="$torcfg"
     fil_bck "$fil" "$bckext"
-    echo `date +"%Y-%m-%d %T"` "create $fil"
+    _msg "create $fil"
     cat <<EOF > "$fil"
-Log notice file /var/log/tor-notices.log
-VirtualAddrNetwork $tor_subn
-AutomapHostsSuffixes .onion,.exit
+#Log debug file /var/log/tor/debug.log
+#Log notice syslog
+Log notice stderr
+#VirtualAddrNetwork $tor_subn
+VirtualAddrNetworkIPv4 $tor_subn
+#AutomapHostsSuffixes .onion,.exit
 AutomapHostsOnResolve 1
-TransPort ${ap_ip}:9040
-DNSPort ${ap_ip}:53
+TransPort ${ap_ip}:${tor_trans_port}
+DNSPort ${ap_ip}:${tor_dns_port}
 EOF
     chmod 644 "$fil"
     touch /var/log/tor-notices.log >/dev/null 2>&1
@@ -917,10 +1133,11 @@ EOF
 }
 
 function Hotspot_Setup {
-  echo `date +"%Y-%m-%d %T"` "Setup  Hotspot $1 $2 ..."
+  _msg "Setup  $snam $1 $2 ..."
   if [ "$1" != "noswpkg" ]; then
-    echo `date +"%Y-%m-%d %T"` "install sw packages"
-    apt-get -qy install iw iptables hostapd dnsmasq fbi qrencode $aptaddinstlist
+    _msg "install sw packages"
+    apt-get -qy update
+    apt-get -qy install iw firewalld hostapd dnsmasq fbi wget curl qrencode $aptaddinstlist
     ovpn_refresh
   fi
 # disable/stop services. starting by script if needed
@@ -1017,8 +1234,8 @@ case "$opt1" in
        ovpn)
             do_ovpn       "$opt2"
             ;;
-       ipt)
-            do_iptab      "$opt2"
+       fwd)
+            do_fwd        "$opt2" "$opt3" "$opt4"
             ;;
     qrcode)
 #           echo "qrcode_on_oled $acc_info"
@@ -1034,7 +1251,7 @@ case "$opt1" in
             Show_Defines  "$opt2" "$opt3" "$opt4"
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | enable | disable | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | ipt [wipe] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | qrcode | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | enable | disable | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | fwd [wipe|install|list] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | qrcode | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
   exit 1
 esac
 

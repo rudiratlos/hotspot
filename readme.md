@@ -15,7 +15,7 @@ functions:
 - setup
 - setchan [channel]
 - syslog [lines]
-- ipt [wipe]
+- fwd [wipe|install|list]
 - ovpn [start|stop|refresh]
 - tor [start|stop]
 - version
@@ -33,6 +33,8 @@ create .ovpn config files for free openvpn server taken from [https://www.vpngat
 
 actions will be logged to /tmp/hotspot and syslog\
 pls. see examples in troubleshooting section.
+
+new hotspot version is using firewalld.
 
 for full installation and setup sequence, pls. see **installation and setup** section at the bottom of this file
 
@@ -109,9 +111,9 @@ hotspot will be started by systemd service \
 control file: /lib/systemd/system/hotspot.service \
 the service will be started at boot stage where \
 network interfaces are available. \
-If autostart variable is set to "yes", hotspot will be tried to start. \
+If autostart variable is set to "yes", hotspot will be tried to start.
 
-Older versions, hotspot was started by rc.local.
+Older versions (V0.960), hotspot was started by rc.local
 
 ~~~bash
 hotspot enable
@@ -246,15 +248,6 @@ start tor service automatically
 ~~~bash
 hotspot modpar self torstart yes            # enable  torstart
 hotspot modpar self torstart no             # disable torstart (default)
-~~~
-
-#### wipeiptables
-
-hotspot script will look for file content ***wipeiptables="yes"*** at startup and will flush/wipe all rules before hotspot will set new rules.
-
-~~~bash
-hotspot modpar self wipeiptables yes        # reset all rules (default)
-hotspot modpar self wipeiptables no         # no rules wipeing
 ~~~
 
 ## openvpn (user specific)
