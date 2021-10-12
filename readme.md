@@ -38,15 +38,21 @@ new hotspot version is using firewalld.
 
 for full installation and setup sequence, pls. see **installation and setup** section at the bottom of this file
 
+# fwd
+
+is a small script, that allows to have a jump start with firewalld
+
 ## installation
 
 rpi login as root required
 
 ~~~bash
 root:# cd /usr/local/sbin
-root:# rm hotspot                  # just remove old hotspot script
-root:# wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
+root:# rm hotspot fwd            # just remove old scripts
+root:# wget -qN https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
 root:# chmod +x hotspot
+root:# wget -qN https://raw.githubusercontent.com/rudiratlos/hotspot/master/fwd
+root:# chmod +x fwd
 root:# apt-get update
 root:# apt-get upgrade
 ~~~
