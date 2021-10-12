@@ -82,7 +82,9 @@ torcfg="$tordir/torrc"
 hostn="`hostname`"
 fbdev="/dev/fb0"
 qrshow="yes"
-qrfile="/var/lib/BASIS/pump/www/qrcode.png"
+qrdir="/tmp"
+if [ "$hostn" == "pump" ]; then qrdir="/var/lib/BASIS/pump/www"; fi
+qrfile="$qrdir/qrcode.png"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
@@ -137,6 +139,7 @@ function qrcode_on_oled  {
 # qrcode_on_oled "x" "WIFI:S:$spot_ssid;T:WPA2;P:$spot_psk;;"
   if [ "$qrshow" == "yes" ] || [ "$1" == "interactive" ]; then
     if [ "$2" != "" ] && [ "$qrfile" != "" ]; then
+    if [ ! -d "$qrdir" ]; then mkdir -p $qrdir; fi 
       /usr/bin/qrencode -o "$qrfile" "$2"
       if [ -f "$qrfile" ] && [ -e "$fbdev" ]; then
         echo "  QRcode  show $2"
