@@ -3,7 +3,7 @@ set +e
 
 snam="${0##*/}"
 
-hotspotver="V0.963"
+hotspotver="V0.964"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -86,10 +86,13 @@ qrdir="/tmp"
 if [ "$hostn" == "pump" ]; then qrdir="/var/lib/BASIS/pump/www"; fi
 qrfile="$qrdir/qrcode.png"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
-spot_ssid="`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`"  # <HOSTNAME>wlan-<lastMAC3byte>
+spot_ssid=`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
 spot_cntry2="`locale | awk -F"[_.]" '/LANG=/{print $2}'`"
 if [ "$spot_cntry2" == "" ]; then spot_cntry2="DE"; fi
+hostapd_ssid=`cat $hostapdf | grep ^ssid= | awk -F "=" '{ print $2 }'
+hostapd_psk=`cat $hostapdf | grep ^wpa_passphrase= | awk -F "=" '{ print $2 }'
+if [ "$hostapd_ssid" == "" ]; then hostapd_ssid="$spot_ssid"; hostapd_psk="$spot_psk"; fi
 
 ovpnsel="AT CH DE ES FR GB JP KR SC TW US"
 ovpndir="/etc/openvpn/client"
@@ -104,14 +107,13 @@ if [ "$ovpnpwd" == "" ]; then
 else
   ovpn_opt="--auth-nocache --config $ovpncfgpath --auth-user-pass $ovpnpwdpath"
 fi
-ovpn_dev="`cat $ovpncfgpath 2>/dev/null | grep -E "^.{0}dev " | awk -F " " '{print $2}'`"
+ovpn_dev=`cat $ovpncfgpath 2>/dev/null | grep -E "^.{0}dev " | awk -F " " '{print $2}'`
 if [ "$ovpn_dev" == "" ] || [ "$ovpn_dev" == "tun" ]; then ovpn_dev="tun0"; fi
 
 fwdnoif="lo $ap_dev $ovpn_dev"
 pubzone="--zone=public"
 apperm=""
 apzone="--zone=home"
-ovpnzone="--zone=block"
 ovpnzone="$pubzone"
 trustzone="--zone=trusted"
 
@@ -136,7 +138,7 @@ function showip {
 function qrcode_on_oled  {
 # show access info on a small OLED screen
 # qrcode_on_oled "x" "http://xx.xx.xx.xx"
-# qrcode_on_oled "x" "WIFI:S:$spot_ssid;T:WPA2;P:$spot_psk;;"
+# qrcode_on_oled "x" "WIFI:S:$hostapd_ssid;T:WPA2;P:$hostapd_psk;;"
   if [ "$qrshow" == "yes" ] || [ "$1" == "interactive" ]; then
     if [ "$2" != "" ] && [ "$qrfile" != "" ]; then
     if [ ! -d "$qrdir" ]; then mkdir -p $qrdir; fi 
@@ -181,7 +183,8 @@ function Hotspot_Defines {
   acc_info=""
   if [ "$hs_try" == "yes" ]
   then
-    acc_info="WIFI:S:$spot_ssid;T:WPA2;P:$spot_psk;;"
+#   acc_info="WIFI:S:$spot_ssid;T:WPA2;P:$spot_psk;;"
+    acc_info="WIFI:S:$hostapd_ssid;T:WPA2;P:$hostapd_psk;;"
   else
     if [ "$wl1_ip" != "" ];   then acc_info="$wl1_ip"; fi
     if [ "$eth_ip" != "" ];   then acc_info="$eth_ip"; fi
@@ -413,7 +416,7 @@ function fwd_ovpn {
     then _act1="add"; _act2="remove";
     else _act2="add"; _act1="remove";  
   fi
-  fwd_def "$_act1" service   openvpn     "$2" "$apzone"   "$step"
+# fwd_def "$_act1" service   openvpn     "$2" "$apzone"   "$step"
   fwd_def "$_act1" interface "$ovpn_dev" "$2" "$ovpnzone" "$step"
   _ret=$?
   fwd_if  "$_act2" "$2" 
