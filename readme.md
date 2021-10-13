@@ -31,7 +31,7 @@ best wlan channel for hotspot functionality will be determined automatically by 
 
 create .ovpn config files for free openvpn server taken from [https://www.vpngate.net](https://www.vpngate.net)
 
-actions will be logged to /tmp/hotspot and syslog\
+actions will be logged in syslog\
 pls. see examples in troubleshooting section.
 
 new hotspot version is using firewalld.
@@ -48,11 +48,8 @@ rpi login as root required
 
 ~~~bash
 root:# cd /usr/local/sbin
-root:# rm hotspot fwd            # just remove old scripts
 root:# wget -qN https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
 root:# chmod +x hotspot
-root:# wget -qN https://raw.githubusercontent.com/rudiratlos/hotspot/master/fwd
-root:# chmod +x fwd
 root:# apt-get update
 root:# apt-get upgrade
 ~~~
@@ -322,10 +319,16 @@ rpi login as root required
 
 ~~~bash
 root:# cd /usr/local/sbin
+
 root:# cp hotspot hotspot.old               # if you want to keep it
 root:# rm hotspot                           # just remove old hotspot script
 root:# wget -qN https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
 root:# chmod +x hotspot
+
+root:# cp fwd fwd.old                       # if you want to keep it
+root:# wget -qN https://raw.githubusercontent.com/rudiratlos/hotspot/master/fwd
+root:# chmod +x fwd
+
 root:# apt-get update
 root:# apt-get upgrade                      # optional
 
