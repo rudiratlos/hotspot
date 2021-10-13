@@ -258,7 +258,7 @@ hotspot modpar self torstart no             # disable torstart (default)
 
 ## openvpn (user specific)
 
-copy myconfig.ovpn file to /etc/openvpn/myovpn.conf
+copy myconfig.ovpn file to /etc/openvpn/myconfig.conf
 
 ~~~bash
 cp myconfig.ovpn /etc/openvpn/myconfig.conf 
