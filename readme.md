@@ -242,7 +242,7 @@ hotspot modpar self ovpnstart no            # disable ovpnstart (default)
 adjust specific openvpn parameter
 
 ~~~bash
-hotspot modpar self ovpn_dev tun3           # change ovpn device for iptables
+hotspot modpar self ovpn_dev tun3           # change ovpn device for firewalld
 ~~~
 
 to work correctly, ovpn_dev has to be the same, that is defined in .ovpn config file (parameter dev). 
@@ -258,29 +258,32 @@ hotspot modpar self torstart no             # disable torstart (default)
 
 ## openvpn (user specific)
 
-copy your.ovpn and your.pwd file to /etc/ovpn/client/
+copy myconfig.ovpn file to /etc/openvpn/myovpn.conf
 
 ~~~bash
-cp your.ovpn /etc/ovpn/client/
-cp your.pwd  /etc/ovpn/client/
-hotspot modpar self ovpncfg your.ovpn
-hotspot modpar self ovpnpwd your.pwd
+cp myconfig.ovpn /etc/openvpn/myconfig.conf 
+hotspot modpar self ovpncfg myconfig
 hotspot modpar self ovpnrefreshbeforestart no
 hotspot modpar self ovpnstart yes
 ~~~
 
-if you do not have a your.pwd, set the parameter to an emtpy string
+pls. assure, that the your config file (/etc/openvpn/myconfig.conf) has the extension .conf\
+and set parameter 'ovpncfg myconfig'\
+the script will start a service **openvpn@myconfig**
 
 ## openvpn (vpngate)
 
 start, stop openvpn or refresh .ovpn files from vpngate.net **experimental**\
 refresh will download the CSV list of free openvpn server and will create .ovpn files.\
 server from these countries will be used, defined by **ovpnsel** parameter: **AT CH DE ES FR GB JP KR SC TW US**
-out of these, the server with the highest score is defined in /etc/openvpn/client/vpngate_bestscore.ovpn and will be used as default openvpn server.
+out of these, the server with the highest score is defined in /etc/openvpn/client/vpngate_bestscore.ovpn\
+and will be copied to **/etc/openvpn/hotspot.conf** and used as default openvpn config file.\
+the script will start a service **openvpn@hotspot** if parameter **ovpncfg** is set to **hotspot**
 
 pls. see ***ovpnstart*** parameter for automatic starting openvpn and modifying parameter
 
 ~~~bash
+hotspot modpar self ovpncfg hotspot         # set default config name
 hotspot ovpn start                          # start openvpn service
 hotspot ovpn stop                           # stop  openvpn service (default)
 hotpsot ovpn refresh                        # recreate .ovpn config files
@@ -319,8 +322,9 @@ rpi login as root required
 
 ~~~bash
 root:# cd /usr/local/sbin
+root:# cp hotspot hotspot.old               # if you want to keep it
 root:# rm hotspot                           # just remove old hotspot script
-root:# wget https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
+root:# wget -qN https://raw.githubusercontent.com/rudiratlos/hotspot/master/hotspot
 root:# chmod +x hotspot
 root:# apt-get update
 root:# apt-get upgrade                      # optional

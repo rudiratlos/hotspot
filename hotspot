@@ -3,7 +3,7 @@ set +e
 
 snam="${0##*/}"
 
-hotspotver="V0.964"
+hotspotver="V0.965"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -11,8 +11,8 @@ opt4="$4"
 
 autostart="yes"
 torstart="no"
-ovpnstart="no"
-ovpnrefreshbeforestart="yes"
+ovpnstart="yes"
+ovpnrefreshbeforestart="no"
 nodogsplashstart="no"
 aptaddinstlist="tor openvpn"
 
@@ -83,9 +83,7 @@ hostn="`hostname`"
 usr="`whoami`"
 fbdev="/dev/fb0"
 qrshow="yes"
-qrdir="/tmp"
-if [ "$hostn" == "pump" ]; then qrdir="/var/lib/BASIS/pump/www"; fi
-qrfile="$qrdir/qrcode.png"
+qrfile="/tmp/qrcode.png"
 # spot_ssid="${hostn}-hotspot"  # <hostname>-hotspot
 spot_ssid=`echo "$hostn" | sed 's/./\U&/g'`wlan-`cat /sys/class/net/$wl0_dev/address | awk -F ":" '{print $4$5$6}'`  # <HOSTNAME>wlan-<lastMAC3byte>
 spot_psk="hallohallo"
@@ -95,22 +93,30 @@ hostapd_ssid=`cat $hostapdf | grep ^ssid= | awk -F "=" '{ print $2 }'`
 hostapd_psk=`cat $hostapdf | grep ^wpa_passphrase= | awk -F "=" '{ print $2 }'`
 if [ "$hostapd_ssid" == "" ]; then hostapd_ssid="$spot_ssid"; hostapd_psk="$spot_psk"; fi
 
+# openvpn defines
 ovpnsel="AT CH DE ES FR GB JP KR SC TW US"
-ovpndir="/etc/openvpn/client"
-vpngate="${ovpndir}/vpngate.csv"
-vpngatefileage="900"
-ovpncfg="vpngate_bestscore.ovpn"
-ovpnpwd="vpngate.pwd"
-ovpncfgpath="${ovpndir}/${ovpncfg}"
-ovpnpwdpath="${ovpndir}/${ovpnpwd}"
-if [ "$ovpnpwd" == "" ]; then
-  ovpn_opt="--auth-nocache --config $ovpncfgpath"
-else
-  ovpn_opt="--auth-nocache --config $ovpncfgpath --auth-user-pass $ovpnpwdpath"
-fi
-ovpn_dev=`cat $ovpncfgpath 2>/dev/null | grep -E "^.{0}dev " | awk -F " " '{print $2}'`
-if [ "$ovpn_dev" == "" ] || [ "$ovpn_dev" == "tun" ]; then ovpn_dev="tun0"; fi
+ovpntop="/etc/openvpn"
+ovpnlogdir="/var/log/openvpn"
+ovpnlogfil="$ovpnlogdir/openvpn.log"
+ovpncfg="$snam"
+ovpnfil="$ovpntop/$ovpncfg.conf"
+_ovpndev=`cat $ovpnfil 2>/dev/null | grep -E "^.{0}dev " | awk -F " " '{print $2}'`
+if [ "$_ovpndev" == "" ] || [ "$_ovpndev" == "tun" ]; then _ovpndev="tun0"; fi
+if [ ! -d "$ovpnlogdir" ] && [ "$ovpnlogdir" != "" ]; then mkdir -p $ovpnlogdir; fi 
 
+ovpn_dev="$_ovpndev"
+
+# vpngate defines
+vpngdir="$ovpntop/client"
+vpngate="${vpngdir}/vpngate.csv"
+vpngatefileage="900"
+vpngpwd="vpngate.pwd"
+vpngpwdpath="${vpngdir}/${vpngpwd}"
+if [ "$ovpnlogfil" != "" ]; then vpnglogpar="--log $ovpnlogfil"; else vpnglogpar=""; fi
+ovpnopt="--auth-nocache $vpnglogpar --config $ovpnfil"
+if [ "$vpngpwd" != "" ]; then ovpnopt="$ovpnopt --auth-user-pass $vpngpwdpath"; fi
+
+# firewalld defines
 fwdnoif="lo $ap_dev $ovpn_dev"
 pubzone="--zone=public"
 apperm=""
@@ -118,22 +124,31 @@ apzone="--zone=home"
 ovpnzone="$pubzone"
 trustzone="--zone=trusted"
 
+# etc defines
 RED="\033[0;31m"
 GREEN="\033[0;32m"
 NC="\033[0m" # No Color
 
 function _msgdat { echo -e `date +"%Y-%m-%d %T"` "$1"; }
 function _msg    { echo -e "$1"; }
-function _msgerr { _msg "${RED}ERR:${NC} $1 $2"; }
-function _msgsuc { _msg "${GREEN}SUC:${NC} $1 $2"; }
+function _msgerr { _msg "${RED}ERR:${NC}$1"; }
+function _msgsuc { _msg "${GREEN}SUC:${NC}$1"; }
+function _msgred { _msg "${RED}$1${NC}"; }
+function _msggrn { _msg "${GREEN}$1${NC}"; }
 
 function showip {
-  if [ "$2" == "wait" ]; then
-    sleep 30  # let vpn come up
+  _ret=1
+#  _ext_ip0=$(curl -s http://whatismyip.akamai.com/)
+   _ext_ip=`dig txt o-o.myaddr.test.l.google.com @ns1.google.com +short -4 | sed 's/"//g'`
+  
+  if [ "$_ext_ip" != "$ext_ip" ] && [ "$_ext_ip" != "" ] && [ "$ext_ip" != "" ]; then
+    _msg "    SUCCESS external ${1}-ip: $_ext_ip vs. router-ip: $ext_ip"
+    _ret=0
+  else
+    _msg "    ERROR   external ${1}-ip: $_ext_ip vs. router-ip: $ext_ip"   
   fi
-   _extip=$(curl -s http://whatismyip.akamai.com/)
-  _msgdat "$snam show my external $1 ip $_extip"
-  curl https://myip.expert/
+  curl -s https://myip.expert/
+  return $_ret
 }
 
 function qrcode_on_oled  {
@@ -141,8 +156,7 @@ function qrcode_on_oled  {
 # qrcode_on_oled "x" "http://xx.xx.xx.xx"
 # qrcode_on_oled "x" "WIFI:S:$hostapd_ssid;T:WPA2;P:$hostapd_psk;;"
   if [ "$qrshow" == "yes" ] || [ "$1" == "interactive" ]; then
-    if [ "$2" != "" ] && [ "$qrfile" != "" ]; then
-      if [ ! -d "$qrdir" ]; then mkdir -p $qrdir; fi 
+    if [ "$2" != "" ] && [ "$qrfile" != "" ]; then 
       /usr/bin/qrencode -o "$qrfile" "$2"
       if [ -f "$qrfile" ] && [ -e "$fbdev" ]; then
 #       echo "  QRcode  show $2"
@@ -154,16 +168,17 @@ function qrcode_on_oled  {
 }
 
 function Show_Defines {
-  echo "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
-  echo "wl0_dev:$wl0_dev wl0_subn:$wl0_subn wl0_ip:$wl0_ip"
-  echo "wl1_dev:$wl1_dev wl1_subn:$wl1_subn wl1_ip:$wl1_ip"
-  echo "ap_shar:$ap_share hs_try:$hs_try $wl1_dev avail: $wl1_avail"
-  echo "wl0_dev:$wl0_dev wl0_devs: $wl0_devs"
-  echo "wl1_dev:$wl1_dev wl1_devs: $wl1_devs"
-  echo "apdvext:$ap_devext"
+  _msg "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
+  _msg "wl0_dev:$wl0_dev wl0_subn:$wl0_subn wl0_ip:$wl0_ip"
+  _msg "wl1_dev:$wl1_dev wl1_subn:$wl1_subn wl1_ip:$wl1_ip"
+  _msg "ap_shar:$ap_share hs_try:$hs_try $wl1_dev avail: $wl1_avail"
+  _msg "wl0_dev:$wl0_dev wl0_devs: $wl0_devs"
+  _msg "wl1_dev:$wl1_dev wl1_devs: $wl1_devs"
+  _msg "apdvext:$ap_devext"
 }
 
 function Hotspot_Defines {
+  ovpn_ip=`ip addr show dev "$ovpn_dev" 2>/dev/null | awk '/inet / { print $2 }'`
   eth_ip=`ip addr show dev "$eth_dev" 2>/dev/null   | awk '/inet / { print $2 }'`
   wl0_ip=`ip addr show dev "$wl0_dev" 2>/dev/null   | awk '/inet / { print $2 }'`
   eth_subn=`ip addr show dev "$eth_dev" 2>/dev/null | awk '/inet / { print $4 }'`
@@ -182,8 +197,7 @@ function Hotspot_Defines {
   fi
 
   acc_info=""
-  if [ "$hs_try" == "yes" ]
-  then
+  if [ "$hs_try" == "yes" ]; then
 #   acc_info="WIFI:S:$spot_ssid;T:WPA2;P:$spot_psk;;"
     acc_info="WIFI:S:$hostapd_ssid;T:WPA2;P:$hostapd_psk;;"
   else
@@ -200,8 +214,7 @@ function Hotspot_Defines {
 }
 
 function fil_bck {
-  if [ "$1" != "" ] && [ -f "$1" ]
-  then
+  if [ "$1" != "" ] && [ -f "$1" ]; then
     if [ "$2" != "" ]; then fn="$1.$2"; else fn="$1.old"; fi
     cp "$1" "$fn"
   fi
@@ -210,25 +223,28 @@ function fil_bck {
 function Hotspot_Status {
   _msg "Status $snam ..."
   systemctl -n50 status $snam
-  echo ""
+  _msg ""
   ps ax | grep wpa_
-  echo ""
+  _msg ""
   ip a
-  echo ""
+  _msg ""
   hostname -I
 }
 
 function Check_installed_PKG {
+  _ret=1
 # Check that what we need is installed
   for command in iw firewalld hostapd dnsmasq; do
     if [ "$command" != "" ]; then
       which $command 2>&1 >/dev/null
-      if (( $? != 0 )); then
+      if [ $? -ne 0 ]; then
         _msgerr "  $command is not installed (use $snam setup)"
-        exit -1
+      else
+        _ret=0
       fi
     fi
   done
+  return $_ret
 }
 
 function Mod_Para {
@@ -239,13 +255,13 @@ function Mod_Para {
     hostapd) cfil="$hostapdf" ;;
     dnsmasq) cfil="$dnsmasqf" ;;
     crda)    cfil="$crdaf" ;;
-    ovpncfg) if [ -d "$ovpndir" ]; then cfil="$ovpncfgpath"; fi ;;
-    ovpnpwd) if [ -d "$ovpndir" ]; then cfil="$ovpnpwdpath"; fi ;;
+    ovpncfg) if [ -d "$vpngdir" ]; then cfil="$ovpnfil"; fi ;;
+    ovpnpwd) if [ -d "$vpngdir" ]; then cfil="$vpngpwdpath"; fi ;;
     torcfg)  if [ -d "$tordir" ];  then cfil="$torcfg"; fi ;;
   esac
 
   if [ "$cfil" != "$fnv" ]; then
-    echo "  change  $1 $2 $3 ($cfil)"
+    _msg "    change  $1 $2 $3 ($cfil)"
     case "$1" in
       ovpnpwd) echo -e "$2\n$3" > $cfil ;;
       ovpncfg|torcfg) sed -i -r "s/^$2[ ]* .*/$2 $3/g" "$cfil" ;;
@@ -253,7 +269,7 @@ function Mod_Para {
       *) sed -i -r "s/^$2[ ]*=.*/$2=$3/g" "$cfil" ;;
     esac
   else
-    echo "  Mod_Para invalid file selector $1"
+    _msg "    Mod_Para invalid file selector $1"
     Check_installed_PKG
   fi
 }
@@ -339,9 +355,18 @@ function fwd_log {
   esac  
 }
 
+function fwd_stat { 
+  _msgred "+ $1 ######################################################"
+  ip a
+  netstat -tulpn
+  fwd_list active
+  iptables -t nat -nvL PREROUTING
+  _msgred "- $1 ######################################################" 
+}
+
 function fwd_wipe {
-  step="fwd_wipe"
   _ret=1
+  step="fwd_wipe"
   rm -rf /etc/firewalld/zones > /dev/null 2>&1
 # Purge old iptables rules
   iptables -t nat -F > /dev/null 2>&1
@@ -380,8 +405,8 @@ function fwd_def {
 # if [ "$_zone" != "$apzone" ] && [ "$_zone" != "$pubzone" ]; then _zone="$apzone"; fi
   if [ "$_zone" == "" ]; then _zone="$apzone"; fi
   if [ "$1" != "" ] && [ "$2" != "" ]; then
-    echo "  $_step $1 $2 $3 $_zone $_perm"
-#   echo "firewall-cmd $_perm $_zone --$1-$2$_valu"
+    _msg "    $_step $1 $2 $3 $_zone $_perm"
+#   _msg "firewall-cmd $_perm $_zone --$1-$2$_valu"
     firewall-cmd $_perm $_zone --$1-$2$_valu >$_errf 2>&1
     _ret=$?
     if [ $_ret -ne 0 ] && [ "$_mode" == "test" ]; then 
@@ -398,7 +423,7 @@ function fwd_def {
 function fwd_if {
 # 1:add|remove [2:opt-permanent]
   step="fwd_if"
-# _msg "  $step $1 $2"
+# _msg "    $step $1 $2"
   ret=1
   for i in $( ifconfig -a | sed 's/[ \t].*//;/^\(\)$/d' | awk -F ":" '{ print $1 }' ); do
     if [[ "$fwdnoif" != *"$i"* ]]; then
@@ -409,18 +434,22 @@ function fwd_if {
   return $ret
 }
 
+function fwd_ovpn_part2 {
+# attach tun interface to ovpn zone
+  step="fw2ovpn"
+# fwd_def "$1" service   openvpn     "$2" "$apzone"   "$step"
+  fwd_def "$1" interface "$ovpn_dev" "$2" "$ovpnzone" "$step"
+  _ret=$? 
+  return $_ret
+}
+
 function fwd_ovpn {
+# remove/add all interfaces from ovpn zone in contrast to tun interface
 # 1:add|remove [2:"--permanent"]
   step="fwdovpn"
-  _ret=1
-  if [ "$1" == "add" ]
-    then _act1="add"; _act2="remove";
-    else _act2="add"; _act1="remove";  
-  fi
-# fwd_def "$_act1" service   openvpn     "$2" "$apzone"   "$step"
-  fwd_def "$_act1" interface "$ovpn_dev" "$2" "$ovpnzone" "$step"
+  if [ "$1" == "add" ]; then _act="remove"; else _act="add"; fi
+  fwd_if  "$_act" "$2"
   _ret=$?
-  fwd_if  "$_act2" "$2" 
   return $_ret
 }
 
@@ -474,7 +503,7 @@ function fwd_do {
   _ret=1
   if [ "$1" == "add" ] || [ "$1" == "remove" ]; then
     if [ "$1" == "add" ];    then _opt="add"; else _opt="remove"; fi
-    echo "  $step $opt $2"
+    _msg "    $step $opt $2"
     if [ "$2" == "ap" ];     then fwd_ap   "$_opt" "$apperm"; _ret=$?; fi
     if [ "$2" == "tor" ];    then fwd_tor  "$_opt" "$apperm"; _ret=$?; fi
     if [ "$2" == "torold" ]; then ipt_do   "$_opt" "tor";     _ret=$?; fi
@@ -488,44 +517,49 @@ function fwd_do {
 function ovpn_cfg_dwn {
 # download and create ovpn config files, source: www.vpngate.net
 #HostName,IP,Score,Ping,Speed,CountryLong,CountryShort,NumVpnSessions,Uptime,TotalUsers,TotalTraffic,LogType,Operator,Message,OpenVPN_ConfigData_Base64
+  _ret=1
   vpnurl="https://www.vpngate.net/api/iphone/"
-  echo "  dwnload $vpnurl"
+  _msg "    dwnload $vpnurl"
   wget -q -O $vpngate $vpnurl
+  _ret=$?
   if [ -f "$vpngate" ]; then
-    vg_filn2="${ovpndir}/vpngate_scores.txt"
-    vg_filn3="${ovpndir}/vpngate_bestscore.ovpn"
-    echo -e "vpn\nvpn" > ${ovpndir}/vpngate.pwd
+    vg_filn2="${vpngdir}/vpngate_scores.txt"
+    vg_filn3="${vpngdir}/vpngate_bestscore.ovpn"
+    echo -e "vpn\nvpn" > ${vpngdir}/vpngate.pwd
     rm $vg_filn2 >/dev/null 2>&1
     nr=0
     vpnsel_arr=($ovpnsel)
-    while read line
-    do
+    while read line; do
       vg_hname=`echo "$line" | awk -F "," '{print $1}'`
       vg_ipadr=`echo "$line" | awk -F "," '{print $2}'`
       vg_score=`echo "$line" | awk -F "," '{print $3}'`
       vg_cntlg=`echo "$line" | awk -F "," '{print $6}'`
       vg_cntsh=`echo "$line" | awk -F "," '{print $7}'`
       vg_confg=`echo "$line" | awk -F "," '{print $15}'`
-      vg_filn1="${ovpndir}/vpngate_${vg_cntsh}_${vg_hname}.ovpn"
+      vg_filn1="${vpngdir}/vpngate_${vg_cntsh}_${vg_hname}.ovpn"
       idx=0
-      while [ "${vpnsel_arr[idx]}" != "" ]
-      do
+      while [ "${vpnsel_arr[idx]}" != "" ]; do
         if [ "$vg_cntsh" == "${vpnsel_arr[idx]}" ]; then
           nr=$(($nr+1))
-          echo "  create  $vg_filn1"
+          _msg "    create  $vg_filn1"
           echo "$vg_score $vg_cntsh $vg_hname $vg_ipadr" >>$vg_filn2
           echo $vg_confg | base64 --decode 2>/dev/null | tr -d "\r" >$vg_filn1
-          if [ "$nr" -eq "1" ]; then cp $vg_filn1 $vg_filn3; fi
+          if [ "$nr" -eq "1" ]; then 
+            cp $vg_filn1 $vg_filn3
+            cp $vg_filn1 $ovpntop/${snam}.conf
+          fi
         fi
         idx=$(($idx+1))
       done
     done <<< $(cat $vpngate)
-    chmod 600 ${ovpndir}/vpngate*
+    chmod 600 ${vpngdir}/vpngate*
   fi
+  return $_ret
 }
 
 function ovpn_refresh {
-  if [ -d "$ovpndir" ]; then
+  _ret=1
+  if [ -d "$vpngdir" ]; then
     dodwn="yes"
     if [ -f "$vpngate" ]; then
 #     test file is recent (not older than xx mins)
@@ -535,35 +569,43 @@ function ovpn_refresh {
     fi
     if [ "$dodwn" == "yes" ]; then
       ovpn_cfg_dwn
+      _ret=$?
     else
-      echo "  file is recent ($vpngate)"
+      _msg "    file is recent ($vpngate)"
     fi
 #   rm $vpngate >/dev/null 2>&1
   fi
+  return $_ret
 }
 
 function ovpn_check_running {
+  _ret=0
   vpnpid=`ps -ef | grep openvpn | grep -v grep | awk '{print $2}'`
   if [ ! -z $vpnpid ]; then
 #  OpenVPN is currently running
    echo $vpnpid | xargs kill
   fi
+  return $_ret
 }
 
 function stop_ap_dev {
+  _ret=1
   if [ "$1" != "" ]; then
     ip -force link set dev "$1" down
     ip addr flush dev "$1"
+    _ret=$?
   fi
+  return $_ret
 }
 
 function inst_ap_dev {
+  _ret=1
   wdev="$1"
   if [ "$wdev" != "$ap_dev" ] && [ "$wdev" != "" ]; then
-    echo "  install & check dev $ap_dev"
+    _msg "    install & check dev $ap_dev"
     apnet255=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $4 }'`
     if [ "$ap_subn" != "$apnet255" ]; then
-      echo "  assign  dev $ap_dev $ap_ipanet on $wdev"
+      _msg "    assign  dev $ap_dev $ap_ipanet on $wdev"
       iw dev $wdev interface add $ap_dev type __ap
       stop_ap_dev "$ap_dev"
 #     ip link set $ap_dev address $ap_devmac
@@ -572,126 +614,169 @@ function inst_ap_dev {
     fi
     apipn=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $2 }'`
     if [ "$apipn" == "$ap_ipanet" ]; then
-      echo "  install dev $ap_dev on $wdev done"
+      _msg "    install dev $ap_dev on $wdev done"
+      _ret=0
     else
-      echo "  ERROR:  install dev $ap_dev"
+      _msgerr "  install dev $ap_dev"
     fi
   fi
+  return $_ret
 }
 
 function wlan {
+  _ret=1
   if [ "$wl1_avail" != "yes" ]; then wl_dev="$wl0_dev"; else wl_dev="$wl1_dev"; fi
   if [ "$2" != "" ]; then wl_dev="$2"; fi
   case "$1" in
         start)
-            echo "  start   wlan    $wl_dev"
+            _msg "    start   wlan    $wl_dev"
             systemctl restart dhcpcd
+            _ret=$?
 #           wpa_cli -i $wl_dev reconfigure
+		    _ret=$?
             ;;
         stop)
-            echo "  stop    wlan    $wl_dev"
+            _msg "    stop    wlan    $wl_dev"
             wpa_cli -p $wpactrl -i $wl_dev terminate >/dev/null 2>&1
+            _ret=$?
             ;;
         clean)
-            echo "  clean   wlan    $wl_dev"
+            _msg "    clean   wlan    $wl_dev"
             wpa_cli terminate >/dev/null 2>&1
             ip addr flush $wl_dev
             ip link set dev $wl_dev down
             rm -r /var/run/wpa_supplicant >/dev/null 2>&1
+            _ret=$?
             ;;
         check)
             if [ "$wl_dev" != "" ]; then
               status=`wpa_cli -i $wl_dev status | grep wpa_state`
               if [ "$status" != "wpa_state=COMPLETED" ]; then
-                echo "  ERROR   wlan    $wl_dev $status"
+                _msgerr "  wlan    $wl_dev $status"
               else
-                echo "  OK      wlan    $wl_dev"
+                _msgsuc "  wlan    $wl_dev"
+                _ret=0
               fi
             fi
             ;;
         *)
             echo "Usage: $snam wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
-            exit 1
   esac
+  return $_ret
 }
 
 function do_fwd {
+  _ret=1
   case "$1" in
         wipe)
             fwd_wipe "$2" "$3" "$2"
+            _ret=$?
             ;;
         inst)
             fwd_do "$2" "$3" "$4"
+            _ret=$?
             ;;
         list)
         	fwd_list "$2" "$3" "$4"
+        	_ret=$?
         	;;
         log)
             fwd_log "$2" "$3" "$4"
+            _ret=$?
             ;;
         *)
             echo "Usage: $snam fwd wipe | inst | list | log"
-            exit 1
   esac
+  return $_ret
 }
 
 function do_ovpn {
+  _ret=1
   Check_installed_PKG
-  if [ -d "$ovpndir" ]; then
+  if [ -d "$vpngdir" ]; then
     case "$1" in
         start)
-            echo "  start   openvpn"
-            ovpn_check_running
-            fwd_do "add" "ovpn"
-            openvpn $ovpn_opt &
+            if [ -f "$ovpnfil" ]; then
+              _msg "    start   openvpn on $ovpn_dev"
+              ovpn_check_running
+              fwd_do "add" "ovpn"
+              _msg "    ovpn    on $ovpn_dev as service openvpn@$ovpncfg"
+              systemctl start openvpn@$ovpncfg           
+#             wait max. 60sec for tun device gets an IPadr
+              i="0"
+              ovpn_ip=""
+              while [ $i -le 60 ] && [ "$ovpn_ip" == "" ]; do
+                sleep 1
+                ovpn_ip=`ip addr show dev "$ovpn_dev" 2>/dev/null | awk '/inet / { print $2 }'`
+                _msg "    ovpn    wait for $ovpn_dev to come up"
+                i=$[$i+1]
+              done
+              if [ "$ovpn_ip" != "" ]; then
+                _msg "    OK ovpn $ovpn_dev $ovpn_ip"
+                fwd_ovpn_part2 "add" "$apperm"
+                _ret=$?
+#               fwd_stat "ovpn"
+              else
+                _msgerr "  ovpn    no IPassignment on $ovpn_dev"
+              fi
+            else
+              _msgerr "  ovpn    no config file found $ovpnfil"
+            fi   
             ;;
         stop)
-            echo "  stop    openvpn"
+            _msg "    stop    openvpn"
+            if [ -f "$ovpnfil" ]; then
+              systemctl stop openvpn@$ovpncfg
+            fi
             ovpn_check_running
-            fwd_do "remove" "ovpn"
+            fwd_do         "remove" "ovpn"
+            _ret=$? 
+            fwd_ovpn_part2 "remove" "$apperm"
             ;;
         refresh)
-            echo "  refresh openvpn config files"
+            _msg "    refresh openvpn config files"
             ovpn_cfg_dwn
+            _ret=$? 
             ;;
         *)
             echo "Usage: $snam ovpn start|stop"
-            exit 1
     esac
   else
     _msgerr "ovpn not installed"
   fi
+  return $_ret
 }
 
 function do_tor {
+  _ret=1
   Check_installed_PKG
   if [ -d "$tordir" ]; then
     case "$1" in
         start)
-            echo "  start   tor (experimental)"
+            _msg "    start   tor (experimental)"
             fwd_do "add" "tor"
+            _ret=$?
 #           service dnsmasq stop
             service tor     restart
-#fwd_list active
-#iptables -t nat -nvL PREROUTING
-#netstat -tulpn
-            echo "  check   tor functionality: https://check.torproject.org/"
+            _msg "    check   tor functionality: https://check.torproject.org/"
 #           fwd_log all
+#           fwd_stat "tor"
             ;;
         stop)
-            echo "  stop    tor"
+            _msg "    stop    tor"
             service tor     stop
             fwd_do "remove" "tor"
+            _ret=$?
 #           service dnsmasq restart
 #           fwd_log off
             ;;
         *)
             echo "Usage: $snam tor start|stop"
-            exit 1
     esac
   else
     _msgerr "tor not installed"
   fi
+  return $_ret
 }
 
 function do_syslog {
@@ -702,6 +787,7 @@ function do_syslog {
 function Find_Chan {
 # find best (least used) channel
 # Find_Chan "wlan1" "11" "104" "5"
+  _ret=1
   chanw=""
   chflg=""
   chvtc=""
@@ -713,8 +799,7 @@ function Find_Chan {
       iwlist $1 scan 2>/dev/null | grep -i "Frequency:$4" | sort | uniq -c | sort -n | sed 's/  //g' | sed 's/)//g' | awk -F " " '{ print $5 }' >> $fil
       linr=0
       ch_prio_arr=($ch_prio)
-      while read line
-      do
+      while read line; do
         linr=$(($linr+1))
         ch_use=`echo "$line" | awk '{print $1}'`
         ch_num=`echo "$line" | awk '{print $2}'`
@@ -722,10 +807,10 @@ function Find_Chan {
         if [ "$linr" -le "1" ]; then chanw="$ch_num"; fi
 #       echo "linr: $linr ch: $chanw"
         idx=0
-        while [ "${ch_prio_arr[idx]}" != "" ]
-        do
+        while [ "${ch_prio_arr[idx]}" != "" ]; do
           if [ "$ch_num" == "${ch_prio_arr[idx]}" ] && [ "$ch_use" -le "1" ]; then
             chanw="$ch_num"
+            _ret=0
 #           echo "found idx: $idx ch: $chanw use: $ch_use"
           fi
           idx=$(($idx+1))
@@ -737,145 +822,171 @@ function Find_Chan {
   fi
   if [ "$chanw" == "" ]; then chanw="$2"; fi
   if [ "$chanw" == "" ]; then chanw="$ch_dflt"; fi
+  return $_ret
 }
 
 function Mdfy_Chan {
-  echo "  modify  channel strategy: $1 $2 $3"
+  _ret=0
+  _msg "    modify  channel strategy: $1 $2 $3"
   ch="$2"
   if [ "$ch" == "" ]; then
     ch="$ch_dflt"
-    echo "  using   default chan $ch"
+    _msg "    using   default chan $ch"
   fi
   if [ "$ch" -le "14" ]; then hm="g"; else hm="a"; fi
   if [ "$ch" -ge "32" ]; then att="$ch (can cause problem)"; else att="$ch"; fi
-  echo "  select  hw_mode $hm  chan $att"
+  _msg "    select  hw_mode $hm  chan $att"
   Mod_Para "hostapd" "channel" "$ch"
   Mod_Para "hostapd" "hw_mode" "$hm"
+  return $_ret
+}
+
+function svc_showstat {
+  if [ "$1" != "" ]; then
+    msg="`service $1 status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
+    _msg "$1     $msg"
+  fi
 }
 
 function Hotspot_Start {
+  _ret=1
   Check_installed_PKG
   Hotspot_Defines
-  echo "starting  $snam $hotspotver usr:$usr"
-  echo "  ETHER   $eth_dev    $eth_ip"
-  echo "  WLANint $wl0_dev   $wl0_ip"
-  echo "  WLANext $wl1_dev   $wl1_ip"
+  ext_ip=`dig txt o-o.myaddr.test.l.google.com @ns1.google.com +short -4 | sed 's/"//g'`
+  _msg "starting    $snam $hotspotver usr:$usr"
+  _msg "    extIP   router  $ext_ip"
+  _msg "    ETHER   $eth_dev    $eth_ip"
+  _msg "    WLANint $wl0_dev   $wl0_ip"
+  _msg "    WLANext $wl1_dev   $wl1_ip"
   chanh=`cat "$hostapdf" | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
   if [ "$chanh" != "0" ]; then
     if [ "$ap_share" != "yes" ] && { [ "$wl1_avail" == "yes" ] || [ "$eth_ip" != "" ]; }; then
       Find_Chan "$wl0_dev" "$ch_dflt" "$chanh" "$freq_filter"
-      echo "  FndChan suggest channel $chanw"
+      _msg "    FndChan suggest channel $chanw"
       msg="select channel for ap mode"
     else
       chanw=`iwlist $wl0_dev channel | awk '/urrent / { print $5 }' | sed 's/)//g'`
       msg="select same channel for ap & station mode on $wl0_dev"
-      echo "  UseChan channel $chanw"
+      _msg "    UseChan channel $chanw"
     fi
     if [ "$chanw" != "" ]; then
       Mdfy_Chan "$msg" "$chanw" "$chanh"
     fi
   else
-    echo "  UseAuto channel selection"
+    _msg "    UseAuto channel selection"
   fi
   if [ "$1" == "nowlan" ]; then wlan stop $wl0_dev; fi
-  echo "  stop    hostapd"
+  _msg "    stop    hostapd"
   systemctl stop hostapd
-  echo "  stop    dnsmasq"
+  _msg "    stop    dnsmasq"
   systemctl stop dnsmasq
   echo 1 > /proc/sys/net/ipv4/ip_forward
   inst_ap_dev $wl0_dev
   sleep 1
 
   fwd_do   "add" "ap"
-  echo "  start   hostapd restart"
+  _msg "    start   hostapd restart"
   systemctl restart  hostapd
-  echo "  start   dnsmasq"
+  _msg "    start   dnsmasq"
   systemctl restart dnsmasq
   
   if [ "$nodogsplashstart" == "yes" ]; then
-    echo "start     captive portal (nodogsplash)"
+    _msg "start     captive portal (nodogsplash)"
     nodogsplash
   fi
 
-  if [ "$ovpnstart" == "yes" ] && [ -d "$ovpndir" ]; then
+  if [ "$ovpnstart" == "yes" ] && [ -d "$vpngdir" ]; then
     if [ "$ovpnrefreshbeforestart" == "yes" ]; then ovpn_refresh; fi
 #   _msgdat "ovpn start"
     do_ovpn start
-    showip "ovpn" "wait"
+    _ret=$?
+    if [ $_ret -eq 0 ]; then 
+      showip "ovpn"; 
+      
+    fi
   else
     fwd_if  add "$apperm" 
-    fwd_def remove interface "$ovpn_dev" "$2" "$ovpnzone" "Hotspot_Start"    
+    fwd_def remove interface "$ovpn_dev" "$2" "$ovpnzone" "Hotspot_Start"  
+    _ret=$?  
   fi
   
   if [ "$torstart" == "yes" ]; then 
     do_tor start "$apperm"
-#   showip "tor" "wait"
-  else
-    msg="`service dnsmasq status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
-    echo "dnsmasq   $msg"
+    _ret=$?
+#   if [ $_ret -eq 0 ]; then showip "tor"; fi
   fi
-  msg="`service hostapd status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
-  echo "hostapd   $msg"
-# echo "started   $snam"
+
+  svc_showstat dnsmasq
+  svc_showstat hostapd
+# _msg "started   $snam"
+  return $_ret
 }
 
 function Hotspot_Try {
+  _ret=1
   Check_installed_PKG
-  echo "trying    $snam $hotspotver usr:$usr"
+  echo "trying      $snam $hotspotver usr:$usr"
 # wait max. 15sec for wlan0 gets an IPadr from DHCP if eth0 is not connected
   i="0"
-  while [ $i -le 15 ] && [ "$wl0_ip" = "" ] && [ "$eth_ip" = "" ]; do
+  while [ $i -le 15 ] && [ "$wl0_ip" == "" ] && [ "$eth_ip" == "" ]; do
+    sleep 1
     Hotspot_Defines
-    echo "  DHCP    wait for IPadr on $wl0_dev $wl0_ip"
+    _msg "    dhcp    wait for IPadr on $wl0_dev $wl0_ip"
 #   Show_Defines
-    sleep 1          # let wlan settle
     i=$[$i+1]
   done
-  if [ "$wl0_ip" = "" ]; then
-    echo "  DHCP    no IPassignment on $wl0_dev"
+  if [ "$wl0_ip" == "" ]; then
+    _msgerr "    dhcp    no IPassignment on $wl0_dev"
   fi
   if [ "$hs_try" == "yes" ] && [ "$ap_share" != "yes" ]; then
-    echo "  try     $snam"
+    _msg "    try     $snam"
     Hotspot_Start nowlan
+    _ret=$?
   else
     if [ "$ap_share" == "yes" ]; then
       if [ "$wl0_subn" != "" ] && [ "$wl0_subn" != "$ap_subn" ]; then
-        echo "  ap&sta  on $wl0_dev start $snam in parallel to station mode"
-        echo "  (not supported, use eth0 or additional usb wlan adaptor wlan1)"
-#       echo "  starting $snam, maybe this will fail"
+        _msg "    ap&sta  on $wl0_dev start $snam in parallel to station mode"
+        _msg "    (not supported, use eth0 or additional usb wlan adaptor wlan1)"
+#       _msg "    starting $snam, maybe this will fail"
         Hotspot_Start wlan
+        _ret=$?
       else
-        echo "  ERROR   subnet conflict $eth_dev $eth_subn $wl0_dev $wl0_subn $ap_dev $ap_subn"
+        _msgerr "    subnet conflict $eth_dev $eth_subn $wl0_dev $wl0_subn $ap_dev $ap_subn"
       fi
     else
-      logger   -s -t $snam "  PARAM   ap_share not set to yes"
+      _msg "    param   ap_share not set to yes"
     fi
   fi
   qrcode_on_oled "try" "$acc_info"
+  return $_ret
 }
 
 function Hotspot_Stop {
+  _ret=1
   Check_installed_PKG
-  echo "stopping  all ovpn instances"
+  _msg "stopping  all ovpn instances"
   ovpn_check_running
-  echo "stopping  $snam"
-  echo "  stop    hostapd"
+  _msg "stopping  $snam"
+  _msg "    stop    hostapd"
   systemctl stop hostapd
   sleep 2
-  echo "  stop    dnsmasq"
+  _msg "    stop    dnsmasq"
   systemctl stop dnsmasq
   echo 0 > /proc/sys/net/ipv4/ip_forward
   fwd_do "remove" "ap"
+  _ret=$?
   sleep 2
   if [ "$1" != "nowlan" ]; then
     systemctl daemon-reload
     wlan start $wl0_dev
     sleep 10
   fi
-  echo "  link    down dev $ap_dev"
+  _msg "    link    down dev $ap_dev"
   stop_ap_dev "$ap_dev"
+  _ret=$?
   iw dev $ap_dev del
-  echo "stopped   $snam"
+  _msg "stopped   $snam"
+  return $_ret
 }
 
 function Setup_rclocal {
@@ -1171,17 +1282,20 @@ function Hotspot_Setup {
   Hotspot_Enable    $1 $2
 }
 
+ret=0
 Hotspot_Defines
-
 case "$opt1" in
         try)
             Hotspot_Try   "$opt2"
+            ret=$?
             ;;
       start)
             Hotspot_Start "$opt2"
+            ret=$?
             ;;
        stop)
             Hotspot_Stop  "$opt2"
+            ret=$?
             ;;
      enable)
             Hotspot_Enable "$opt2"
@@ -1196,12 +1310,14 @@ case "$opt1" in
 		   echo "ERR: since V0.960 not needed, started by systemd"
 #                 Hotspot_Try "$opt3"
                 fi
+                ret=1
               ;;
               start)
                 if [ "$autostart" == "yes" ]; then
 		  echo "ERR: since V0.960 not needed, started by systemd"
 #                 Hotspot_Start "$opt3"
                 fi
+                ret=1
               ;;
               *)
                 echo "$autostart"
@@ -1213,12 +1329,14 @@ case "$opt1" in
             echo "  20sec  settle time"
             sleep 20
             Hotspot_Start "$opt2"
+            ret=$?
             ;;
       retry)
             Hotspot_Stop   nowlan
             echo "  20sec  settle time"
             sleep 20
             Hotspot_Try   "$opt2"
+            ret=$?
             ;;
        wlan)
             wlan          "$opt2" "$opt3"
@@ -1259,6 +1377,5 @@ case "$opt1" in
             ;;
           *)
   echo "Usage: $snam try | start [nowlan] | stop [nowlan] | enable | disable | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | fwd [wipe|install|list] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | qrcode | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
-  exit 1
 esac
-
+exit $ret
