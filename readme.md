@@ -342,13 +342,10 @@ root:# reboot                               # if autostart enable or use hotspot
 
 ## troubleshooting
 
-log entries will be sent to the file /tmp/hotspot.log and syslog utility
-
-following commands will show you hotspot script activity
+syslog will be used as log utility
 
 ~~~bash
 hotspot syslog
-cat /tmp/hotspot.log
 tail -500 /var/log/syslog | grep -a "hotspot:"
 cat /var/log/syslog | grep -a "hotspot:"
 ~~~
