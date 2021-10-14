@@ -442,7 +442,7 @@ function fwd_def {
 
 function fwd_if {
 # 1:add|remove [2:opt-permanent] [3:step]
-  step="fwd_if"
+  step="fwd_if "
   if [ "$3" != "" ]; then step="$3"; fi
 # _msg "    $step $1 $2"
   ret=1
@@ -475,14 +475,14 @@ function fwd_ovpn_part2 {
 function fwd_ovpn {
 # remove/add all interfaces from ovpn zone in contrast to tun interface
 # 1:add|remove [2:"--permanent"]
-  fwd_vpns "$1" "$2" "fwdovpn "
+  fwd_vpns "$1" "$2" "fwdovpn"
   _ret=$?
   return $_ret
 }
 
 function fwd_wg_part2 {
 # attach wg interface to wg zone
-  step="fw2_wg"
+  step="fw2_wg "
   fwd_def "$1" interface "$wg_dev" "$2" "$wgzone" "$step"
   _ret=$? 
   return $_ret
@@ -1122,9 +1122,9 @@ function Hotspot_Start {
       ret=$?
       ;;
     *) 
-      fwd_if  add "$apperm" 
       fwd_def remove interface "$ovpn_dev" "$2" "$ovpnzone" "Hotspot_Start"  
-      fwd_def remove interface "$wg_dev"   "$2" "$wgzone"   "Hotspot_Start"  
+      fwd_def remove interface "$wg_dev"   "$2" "$wgzone"   "Hotspot_Start"
+      fwd_if  add "$apperm" 
       _ret=$?
       ;;
   esac
@@ -1244,8 +1244,8 @@ Wants=network.target
 Type=oneshot
 WorkingDirectory=/usr/local/sbin
 ExecStart=/usr/local/sbin/$snam try
-StandardOutput=syslog
-StandardError=syslog
+StandardOutput=journal
+StandardError=journal
 SyslogIdentifier=$snam
 #StandardOutput=file:/tmp/$snam.log
 #StandardError=file:/tmp/$snam.log
