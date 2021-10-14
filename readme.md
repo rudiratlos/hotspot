@@ -30,7 +30,7 @@ for internet access.
 
 best wlan channel for hotspot functionality will be determined automatically by least used frequency spectrum.
 
-support for vpns: wireguard and openvpn
+support for vpns: wireguard and openvpn\
 support for tor
 
 create .ovpn config files for free openvpn server taken from [https://www.vpngate.net](https://www.vpngate.net)
@@ -72,7 +72,7 @@ setting parameters and create config files:
 - /etc/hostapd/hostapd.conf
 - /etc/tor/torrc
 - /etc/wireguard/
-- /etc(openvpn/
+- /etc/openvpn/
 
 Existing files will be backed up with a date extension (YYYYMMDDhhmmss). 
 
@@ -108,9 +108,9 @@ you can disable the installation of tor and/or ovpn package by modifying the ***
 ~~~bash
 hotspot modpar self aptaddinstlist "tor"                    # install tor only
 hotspot modpar self aptaddinstlist "openvpn"                # install openvpn only
-hotspot modpar self aptaddinstlist "openvpn"                # install wireguard only 
+hotspot modpar self aptaddinstlist "wireguard"              # install wireguard only 
 hotspot modpar self aptaddinstlist "tor openvpn wireguard"  # install all three (default)
-hotspot modpar self aptaddinstlist ""                       # do not install tor, openvpn and wireguard
+hotspot modpar self aptaddinstlist ""                       # do not install vpns
 ~~~
 
 ## enable
@@ -264,10 +264,10 @@ hotspot modpar self torstart no             # disable torstart (default)
 
 start wireguard service automatically
 
-~~bash
+~~~bash
 hotspot modpar self wgstart yes            # enable  wgstart
 hotspot modpar self wgstart no             # disable wgstart (default)
-~~
+~~~
 
 ## openvpn (user specific)
 
@@ -316,7 +316,7 @@ hotspot tor stop                            # stop  tor service
 
 setup example for wg client, which should connect to remote wireguard server (wg.example.com:51820)
 
-~~bash
+~~~bash
 hotspot modpar self wg_srvpubkey "URSgXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXJEPQY="  # wg server's public key 
 hotspot modpar self wg_endpoint  "wg.example.com:51820"  # wg server's address and listening port
 hotspot modpar self wgstart yes  # will start wireguard tunnel at startup
@@ -326,7 +326,7 @@ hotspot wg config client   # create wg config file /etc/wiregard/wg0.conf
 
 hotspot wg start           # start wireguard service
 hotspot wg stop            # stop  wireguard service
-~~
+~~~
 
 ## syslog [lines]
 
