@@ -321,7 +321,7 @@ hotspot modpar self wg_srvpubkey "URSgXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXJEPQY=" 
 hotspot modpar self wg_endpoint  "wg.example.com:51820"  # wg server's address and listening port
 hotspot modpar self wgstart yes  # will start wireguard tunnel at startup
 
-hotspot wg config genkeys  # create public and private key files for wg client in /etc/wireguard
+hotspot wg config genkeys  # create public and private key files for wg client in /etc/wireguard/
 hotspot wg config client   # create wg config file /etc/wireguard/wg0.conf
 
 hotspot wg start           # start wireguard service

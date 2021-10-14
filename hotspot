@@ -11,10 +11,10 @@ opt4="$4"
 
 autostart="yes"
 torstart="no"
-ovpnstart="no"
 wgstart="no"
-ovpnrefreshbeforestart="no"
 nodogsplashstart="no"
+ovpnstart="no"
+ovpnrefreshbeforestart="no"
 
 aptaddinstlist="tor openvpn wireguard"
 
@@ -77,7 +77,7 @@ wpactrl="/var/run/wpa_supplicant"
 wpasupg="/etc/wpa_supplicant/wpa_supplicant.conf"
 hostapdf="/etc/hostapd/hostapd.conf"
 dnsmasqf="/etc/dnsmasq.conf"
-dnsmasqcpf="/etc/dnsmasq.captiveportal.conf"
+dnsmasqcpf="no"
 crdaf="/etc/default/crda"
 tordir="/etc/tor"
 torcfg="$tordir/torrc"
@@ -1293,14 +1293,30 @@ EOF
 }
 
 function Setup_dnsmasqconf {
+  _dir="/etc/${snam}" 
+  if [ ! -d "$_dir" ]; then 
+    mkdir -p $_dir >/dev/null 2>&1
+    chmod 755 "$_dir"
+  fi
+  
+  _dir="/etc/dnsmasq.d"
+  if [ ! -d "$_dir" ]; then 
+    mkdir -p $_dir >/dev/null 2>&1
+    chmod 755 "$_dir"
+  fi
+
   fil="/etc/dnsmasq.conf"
-  fil_bck "$fil" "$bckext"
+  _okdir=`cat "$fil" | awk -F "conf-dir=" '{print $2}'`
+  if [ "$_dir" != "$_okdir" ]; then
+    fil_bck "$fil" "$bckext"
+    echo "conf-dir=$_dir" > $fil
+    chmod 644 "$fil"
+  fi
+  
+  fil="$_dir/01_${snam}.conf"
+# fil_bck "$fil" "$bckext"
   _msg "create $fil"
   cat <<EOF > "$fil"
-dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
-dhcp-mac=set:client_is_a_pi,DC:A6:32:*:*:*
-dhcp-reply-delay=tag:client_is_a_pi,2
-
 # Never forward plain names (without a dot or domain part)
 domain-needed
 no-dhcp-interface=eth0,wlan0
@@ -1308,11 +1324,22 @@ listen-address=$ap_ip
 listen-address=127.0.0.1
 bind-interfaces
 
-#==========[ NAMESERVER ]==========#
-
+log-facility=/var/log/syslog
+#log-queries
+#log-dhcp
+log-async
+local-ttl=2
+local-service
+localise-queries
+EOF
+  chmod 644 "$fil"
+  
+  fil="$_dir/03_${snam}_ns.conf"
+  _msg "create $fil"
+  cat <<EOF > "$fil"
 no-hosts # Do not read /etc/hosts
 # Read additional hosts-file (not only /etc/hosts) to add entries into DNS
-#addn-hosts=/etc/dnsmasq_static_hosts.conf
+#addn-hosts=/etc/${snam}/dnsmasq_static_hosts.list
 expand-hosts
 domain=$ns_dom
 local=/$ns_dom/$ap_ip
@@ -1320,9 +1347,16 @@ local=/$ns_dom/$ap_ip
 # Host & PTR & Reverse
 host-record=$hostn.$ns_dom,$ap_ip
 server=/$ap_revnet.in-addr.arpa/$ap_ip
-ptr-record=$ap_revip.in-addr.arpa,$hostn.$ns_dom
-
-#==========[ DHCP ]==========#
+ptr-record=$ap_revip.in-addr.arpa,$hostn.$ns_dom  
+EOF
+  chmod 644 "$fil"
+  
+  fil="$_dir/05_${snam}_dhcp.conf"
+  _msg "create $fil"
+  cat <<EOF > "$fil"
+dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
+dhcp-mac=set:client_is_a_pi,DC:A6:32:*:*:*
+dhcp-reply-delay=tag:client_is_a_pi,2
 
 dhcp-range=$ap_net.50,$ap_net.199,255.255.255.0,12h
 dhcp-option=option:router,$ap_ip
@@ -1335,31 +1369,19 @@ dhcp-option=46,8             # netbios node type
 dhcp-option=252,"\n"         # REQUIRED to get win7 to behave
 dhcp-option=160,http://10.3.141.1/index.html # RFC 7710
 
-# Include another configuration options
-#conf-file=/etc/dnsmasq.captiveportal.conf
-
 # DHCPv4 Should be set when dnsmasq is definitely the only DHCP server on a network
 #dhcp-authoritative
 # DHCPv4 Server will attempt to ensure that an address is not in use before allocating it to a host
 #no-ping
-
-#==========[ etc ]==========#
-
-log-facility=/var/log/syslog
-#log-queries
-#log-dhcp
-log-async
-local-ttl=2
-local-service
-localise-queries
 EOF
   chmod 644 "$fil"
 
-  fil="/etc/dnsmasq.captiveportal.conf"
-  fil_bck "$fil" "$bckext"
-  _msg "create $fil"
-  cat <<EOF > "$fil"
-#file autocreated, do not edit (2020-06-01 12:37:02)
+  fil="$_dir/10_${snam}_captiveportal.conf"
+  if [ "$dnsmasqcpf" == "yes" ]; then
+# fil_bck "$fil" "$bckext"
+    _msg "create $fil"
+    cat <<EOF > "$fil"
+#file autocreated, do not edit
 
 # Captive Portal
 # DNS Internet Connectivity Test Domains
@@ -1382,9 +1404,11 @@ address=/detectportal.firefox.com/$ap_ip
 
 # DHCP
 #dhcp-option=160,$ap_cauri # RFC 7710
-
 EOF
-  chmod 644 "$fil"
+    chmod 644 "$fil"
+  else
+    rm "$fil" >/dev/null 2>&1
+  fi
 }
 
 function Setup_hostapddflt {
