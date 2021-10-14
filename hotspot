@@ -3,7 +3,7 @@ set +e
 
 snam="${0##*/}"
 
-hotspotver="V0.965"
+hotspotver="V0.966"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -11,10 +11,12 @@ opt4="$4"
 
 autostart="yes"
 torstart="no"
-ovpnstart="yes"
+ovpnstart="no"
+wgstart="no"
 ovpnrefreshbeforestart="no"
 nodogsplashstart="no"
-aptaddinstlist="tor openvpn"
+
+aptaddinstlist="tor openvpn wireguard"
 
 eth_dev="eth0"
 # freq_filter: 2|5 GHz band
@@ -93,7 +95,26 @@ hostapd_ssid=`cat $hostapdf | grep ^ssid= | awk -F "=" '{ print $2 }'`
 hostapd_psk=`cat $hostapdf | grep ^wpa_passphrase= | awk -F "=" '{ print $2 }'`
 if [ "$hostapd_ssid" == "" ]; then hostapd_ssid="$spot_ssid"; hostapd_psk="$spot_psk"; fi
 
+# wireguard defines
+wg_dev="wg0"
+wg_net="10.0.0"
+wg_ipclient="${wg_net}.2"
+wg_ipcnet="${wg_ipclient}/32"
+wg_ipsrv="${wg_net}.1"
+wg_ipsnet="${wg_ipsrv}/24"
+wg_dns="8.8.8.8"
+wg_top="/etc/wireguard"
+wg_cfg="$wg_dev"
+wg_fil="$wg_top/$wg_cfg.conf"
+# e.g.       "URSgXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXJEPQY="
+wg_srvpubkey=""
+# e.g.      "wg.example.com:51820"
+wg_endpoint="wg.example.com:51820"
+wg_publkeyf="vpn-public.key"
+wg_privkeyf="vpn-private.key"
+
 # openvpn defines
+# e.g.  "AT CH DE ES FR GB JP KR SC TW US"
 ovpnsel="AT CH DE ES FR GB JP KR SC TW US"
 ovpntop="/etc/openvpn"
 ovpnlogdir="/var/log/openvpn"
@@ -122,6 +143,7 @@ pubzone="--zone=public"
 apperm=""
 apzone="--zone=home"
 ovpnzone="$pubzone"
+wgzone="$pubzone"
 trustzone="--zone=trusted"
 
 # etc defines
@@ -131,10 +153,11 @@ NC="\033[0m" # No Color
 
 function _msgdat { echo -e `date +"%Y-%m-%d %T"` "$1"; }
 function _msg    { echo -e "$1"; }
-function _msgerr { _msg "${RED}ERR:${NC}$1"; }
-function _msgsuc { _msg "${GREEN}SUC:${NC}$1"; }
+function _msgerr { _msg "${RED}ERR:${NC} $1"; }
+function _msgsuc { _msg "${GREEN}SUC:${NC} $1"; }
 function _msgred { _msg "${RED}$1${NC}"; }
 function _msggrn { _msg "${GREEN}$1${NC}"; }
+function mark    { export $1=`pwd`; }
 
 function showip {
   _chkurl="https://myip.expert/"
@@ -418,17 +441,26 @@ function fwd_def {
 }
 
 function fwd_if {
-# 1:add|remove [2:opt-permanent]
+# 1:add|remove [2:opt-permanent] [3:step]
   step="fwd_if"
+  if [ "$3" != "" ]; then step="$3"; fi
 # _msg "    $step $1 $2"
   ret=1
   for i in $( ifconfig -a | sed 's/[ \t].*//;/^\(\)$/d' | awk -F ":" '{ print $1 }' ); do
     if [[ "$fwdnoif" != *"$i"* ]]; then
-      fwd_def "$1" interface "$i" "$2" "$pubzone" "$step "
+      fwd_def "$1" interface "$i" "$2" "$pubzone" "$step"
       ret=$?
     fi
   done
   return $ret
+}
+
+function fwd_vpns {
+# 1:add|remove [2:"--permanent"] [3:step]
+  if [ "$1" == "add" ]; then _act="remove"; else _act="add"; fi
+  fwd_if  "$_act" "$2" "$3"
+  _ret=$?
+  return $_ret
 }
 
 function fwd_ovpn_part2 {
@@ -443,9 +475,23 @@ function fwd_ovpn_part2 {
 function fwd_ovpn {
 # remove/add all interfaces from ovpn zone in contrast to tun interface
 # 1:add|remove [2:"--permanent"]
-  step="fwdovpn"
-  if [ "$1" == "add" ]; then _act="remove"; else _act="add"; fi
-  fwd_if  "$_act" "$2"
+  fwd_vpns "$1" "$2" "fwdovpn "
+  _ret=$?
+  return $_ret
+}
+
+function fwd_wg_part2 {
+# attach wg interface to wg zone
+  step="fw2_wg"
+  fwd_def "$1" interface "$wg_dev" "$2" "$wgzone" "$step"
+  _ret=$? 
+  return $_ret
+}
+
+function fwd_wg {
+# remove/add all interfaces from wireguard zone in contrast to wg interface
+# 1:add|remove [2:"--permanent"]
+  fwd_vpns "$1" "$2" "fwd_wg "
   _ret=$?
   return $_ret
 }
@@ -505,6 +551,7 @@ function fwd_do {
     if [ "$2" == "tor" ];    then fwd_tor  "$_opt" "$apperm"; _ret=$?; fi
     if [ "$2" == "torold" ]; then ipt_do   "$_opt" "tor";     _ret=$?; fi
     if [ "$2" == "ovpn" ];   then fwd_ovpn "$_opt" "$apperm"; _ret=$?; fi
+    if [ "$2" == "wg" ];     then fwd_wg   "$_opt" "$apperm"; _ret=$?; fi
   else
     _msgerr "  $step  invalid option $1 $2 $3 $4"
   fi
@@ -582,6 +629,170 @@ function ovpn_check_running {
 #  OpenVPN is currently running
    echo $vpnpid | xargs kill
   fi
+  return $_ret
+}
+
+function wg_check_running {
+  _ret=0
+  vpnpid=`ps -ef | grep wg | grep -v grep | awk '{print $2}'`
+  if [ ! -z $vpnpid ]; then
+#  wg is currently running
+   echo $vpnpid | xargs kill
+  fi
+  return $_ret
+}
+
+function wg_up {
+  _ret=1
+  step="wg_up"
+  if [ "$1" == "" ]; then _cfg="$wg_dev"; else _cfg="$1"; fi
+  if [ -f "$wg_top/$_cfg.conf" ]; then
+    _msg "    $step   start cfg $_cfg $wg_ipcnet (experimental)"
+    systemctl start wg-quick@$_cfg
+    _ret=$?
+    if [ $_ret -eq 0 ]; then
+#     wait max. 60sec for wg device gets an IPadr
+      i="0"
+      wg_ip=""
+      while [ $i -le 60 ] && [ "$wg_ip" == "" ]; do
+        sleep 1
+        wg_ip=`ip addr show dev "$wg_dev" 2>/dev/null | awk '/inet / { print $2 }'`
+        _msg "    $step   wait for $wg_dev to come up"
+        i=$[$i+1]
+      done
+      if [ "$wg_ip" != "" ]; then
+        _msg "    OK wg   $wg_dev $wg_ip"
+        fwd_do "add" "wg"
+        _ret=$?
+        fwd_wg_part2 "add" "$apperm"
+        _ret=$?
+        if [ $_ret -eq 0 ]; then showip "wg"; fi
+#       fwd_stat "wg"
+      else
+        _msgerr "  $step   no IPassignment on $wg_dev"
+      fi
+    else
+      _msgerr "  $step   ret:$_ret can not start with systemctl start wg-quick@$_cfg "
+    fi
+  else 
+    _msgerr "$step missing $wg_top/$_cfg.conf, use hotspot wg config"
+  fi
+  return $_ret
+}
+
+function wg_dwn {
+  _ret=1
+  step="wg_dwn"
+  if [ "$1" == "" ]; then _cfg="$wg_dev"; else _cfg="$1"; fi
+  if [ -f "$wg_top/$_cfg.conf" ]; then
+    _msg "    $step  stop cfg $_cfg"
+    systemctl stop wg-quick@$_cfg
+    _ret=$?
+    fwd_do       "remove" "wg"
+    _ret=$? 
+    fwd_wg_part2 "remove" "$apperm"
+  else 
+    _msgerr "$step missing $wg_top/$_cfg.conf, use hotspot wg config"
+  fi
+  return $_ret
+}
+
+function wg_keys {
+  _ret=1
+  step="wg_keys"
+  mark _wg
+  cd $wg_top
+  _msg "    $step create key files $wg_privkeyf $wg_publkeyf in $wg_top/"
+  wg genkey | tee $wg_privkeyf | wg pubkey > $wg_publkeyf
+  _ret=$?  
+  cd $_wg
+  return $_ret  
+}
+
+function wg_ccfg {
+  _ret=1
+  step="wg_ccfg"
+  _msg "    $step create client config file $wg_fil (experimental)"
+  if [ "$wg_endpoint" != "" ]; then
+    if [ "$wg_srvpubkey" != "" ]; then
+      if [ -f "$wg_top/$wg_privkeyf" ]; then
+        _privkey="`cat $wg_top/$wg_privkeyf`"
+        echo "# file autocreated by hotspot wg config client" > $wg_fil
+        echo ""                             >> $wg_fil
+        echo "[Interface]"                  >> $wg_fil
+        echo "PrivateKey = $_privkey"       >> $wg_fil
+        echo "Address = $wg_ipcnet"         >> $wg_fil
+        if [ "$wg_dns" != "" ]; then
+          echo "DNS = $wg_dns"              >> $wg_fil
+        fi
+        echo ""                             >> $wg_fil
+        echo "[Peer]"                       >> $wg_fil
+        echo "PublicKey = $wg_srvpubkey"    >> $wg_fil
+        echo "Endpoint = $wg_endpoint"      >> $wg_fil 
+        echo "AllowedIPs = 0.0.0.0/0, ::/0" >> $wg_fil   
+        _ret=0
+      else
+        _msgerr "missing $wg_top/$wg_privkeyf, use hotspot wg config genkeys"
+      fi
+    else
+      _msgerr "no server public key defined, use hotspot modpar self wg_srvpubkey \"<wireguard_server_public_key>\""
+    fi
+  else
+    _msgerr "no server Endpoint defined, use hotspot modpar self wg_endpoint \"<wireguard_server_endpoint>\""
+  fi
+  return $_ret
+}
+
+function wg_scfg {
+  _ret=1
+  step="wg_scfg"
+  _msg "    $step  create server config file $wg_fil (experimental)"
+  if [ -f "$wg_top/$wg_publkeyf" ]; then
+    _publkey="`cat $wg_top/$wg_publkeyf`"
+    echo "# file autocreated by hotspot wg config server" > $wg_fil
+    echo ""                        >> $wg_fil
+    echo "[Peer]"                  >> $wg_fil
+    echo "PublicKey = $_publkey"   >> $wg_fil
+    echo "AllowedIPs = $wg_ipcnet" >> $wg_fil  
+    _ret=0
+  else
+    _msgerr "missing $wg_top/$wg_publkeyf, use hotspot wg config genkeys"
+  fi
+  return $_ret
+}
+
+function wg_menu {
+  _ret=1
+  case "$1" in
+        start)
+            wg_up "$2" "$3"
+            _ret=$?
+            ;;
+        stop)
+            wg_dwn "$2" "$3"
+            _ret=$?
+            ;;
+        config)
+            case "$2" in
+              genkeys)
+                wg_keys "$3"
+                _ret=$?
+                ;;
+              client)
+                wg_ccfg "$3"
+                _ret=$?
+                ;;
+              server)
+                wg_scfg "$3"
+                _ret=$?
+                ;;
+              *)
+                echo "Usage: $snam wg config [client | server | genkeys]"
+            esac
+            ;;
+        *)
+            echo "Usage: $snam wg [start [cfg] | stop [cfg] | config]"
+  esac
   return $_ret
 }
 
@@ -696,7 +907,6 @@ function do_ovpn {
             if [ -f "$ovpnfil" ]; then
               _msg "    start   openvpn on $ovpn_dev"
               ovpn_check_running
-              fwd_do "add" "ovpn"
               _msg "    ovpn    on $ovpn_dev as service openvpn@$ovpncfg"
               systemctl start openvpn@$ovpncfg           
 #             wait max. 60sec for tun device gets an IPadr
@@ -710,10 +920,10 @@ function do_ovpn {
               done
               if [ "$ovpn_ip" != "" ]; then
                 _msg "    OK ovpn $ovpn_dev $ovpn_ip"
+                fwd_do         "add" "ovpn"
                 fwd_ovpn_part2 "add" "$apperm"
                 _ret=$?
                 if [ $_ret -eq 0 ]; then showip "ovpn"; fi
-                _msg "    check   ovpn functionality: https://myip.expert/"
 #               fwd_stat "ovpn"
               else
                 _msgerr "  ovpn    no IPassignment on $ovpn_dev"
@@ -731,6 +941,7 @@ function do_ovpn {
             fwd_do         "remove" "ovpn"
             _ret=$? 
             fwd_ovpn_part2 "remove" "$apperm"
+            _ret=$? 
             ;;
         refresh)
             _msg "    refresh openvpn config files"
@@ -894,17 +1105,29 @@ function Hotspot_Start {
     _msg "start     captive portal (nodogsplash)"
     nodogsplash
   fi
+  
+  _vpnmode=""
+  if [ "$wgstart" == "yes" ]   && [ -d "$wg_top" ];  then _vpnmode="wg";   fi
+  if [ "$ovpnstart" == "yes" ] && [ -d "$vpngdir" ]; then _vpnmode="ovpn"; fi
 
-  if [ "$ovpnstart" == "yes" ] && [ -d "$vpngdir" ]; then
-    if [ "$ovpnrefreshbeforestart" == "yes" ]; then ovpn_refresh; fi
-#   _msgdat "ovpn start"
-    do_ovpn start
-    _ret=$?
-  else
-    fwd_if  add "$apperm" 
-    fwd_def remove interface "$ovpn_dev" "$2" "$ovpnzone" "Hotspot_Start"  
-    _ret=$?  
-  fi
+  case "$_vpnmode" in
+    ovpn)
+      if [ "$ovpnrefreshbeforestart" == "yes" ]; then ovpn_refresh; fi
+#     _msgdat "ovpn start"
+      do_ovpn start    
+      ret=$?
+      ;;
+    wg)
+      wg_up
+      ret=$?
+      ;;
+    *) 
+      fwd_if  add "$apperm" 
+      fwd_def remove interface "$ovpn_dev" "$2" "$ovpnzone" "Hotspot_Start"  
+      fwd_def remove interface "$wg_dev"   "$2" "$wgzone"   "Hotspot_Start"  
+      _ret=$?
+      ;;
+  esac
   
   if [ "$torstart" == "yes" ]; then 
     do_tor start "$apperm"
@@ -1354,6 +1577,9 @@ case "$opt1" in
        ovpn)
             do_ovpn       "$opt2"
             ;;
+       wg)     
+            wg_menu       "$opt2" "$opt3" "$opt4"
+            ;;
        fwd)
             do_fwd        "$opt2" "$opt3" "$opt4"
             ;;
@@ -1371,6 +1597,6 @@ case "$opt1" in
             Show_Defines  "$opt2" "$opt3" "$opt4"
             ;;
           *)
-  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | enable | disable | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | fwd [wipe|install|list] | tor [start|stop] | ovpn [start|stop|refresh] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | qrcode | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
+  echo "Usage: $snam try | start [nowlan] | stop [nowlan] | enable | disable | retry | restart [nowlan] | status | setup | setchan [channel] | syslog [lines] | fwd [wipe|install|list] | tor [start|stop] | ovpn [start|stop|refresh] | wg [start|stop|config] | modpar <crda|dnsmasq|hostapd|self> <name> [value] | version | dbg | qrcode | wlan start|stop|check|clean [$wl0_dev|$wl1_dev]"
 esac
 exit $ret
