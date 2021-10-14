@@ -137,17 +137,14 @@ function _msgred { _msg "${RED}$1${NC}"; }
 function _msggrn { _msg "${GREEN}$1${NC}"; }
 
 function showip {
-  _ret=1
-#  _ext_ip0=$(curl -s http://whatismyip.akamai.com/)
-   _ext_ip=`dig txt o-o.myaddr.test.l.google.com @ns1.google.com +short -4 | sed 's/"//g'`
-  
-  if [ "$_ext_ip" != "$ext_ip" ] && [ "$_ext_ip" != "" ] && [ "$ext_ip" != "" ]; then
-    _msg "    SUCCESS external ${1}-ip: $_ext_ip vs. router-ip: $ext_ip"
-    _ret=0
-  else
-    _msg "    ERROR   external ${1}-ip: $_ext_ip vs. router-ip: $ext_ip"   
-  fi
-  curl -s https://myip.expert/
+  _chkurl="https://myip.expert/"
+# _ext_ip0=$(wget -q -T10 -U "curl" -O - http://whatismyip.akamai.com/)
+  _ext_ip=`dig txt o-o.myaddr.test.l.google.com @ns1.google.com +short -4 | sed 's/"//g'`
+  _msg "    CheckIP external ${1}-ip: $_ext_ip"
+  _msg "    CheckIP $_chkurl"
+  wget -q -T10 -U "curl" -O - $_chkurl
+# curl -s $_chkurl
+  _ret=$?
   return $_ret
 }
 
@@ -715,6 +712,8 @@ function do_ovpn {
                 _msg "    OK ovpn $ovpn_dev $ovpn_ip"
                 fwd_ovpn_part2 "add" "$apperm"
                 _ret=$?
+                if [ $_ret -eq 0 ]; then showip "ovpn"; fi
+                _msg "    check   ovpn functionality: https://myip.expert/"
 #               fwd_stat "ovpn"
               else
                 _msgerr "  ovpn    no IPassignment on $ovpn_dev"
@@ -758,6 +757,7 @@ function do_tor {
             _ret=$?
 #           service dnsmasq stop
             service tor     restart
+#           if [ $_ret -eq 0 ]; then showip "tor"; fi
             _msg "    check   tor functionality: https://check.torproject.org/"
 #           fwd_log all
 #           fwd_stat "tor"
@@ -900,10 +900,6 @@ function Hotspot_Start {
 #   _msgdat "ovpn start"
     do_ovpn start
     _ret=$?
-    if [ $_ret -eq 0 ]; then 
-      showip "ovpn"; 
-      
-    fi
   else
     fwd_if  add "$apperm" 
     fwd_def remove interface "$ovpn_dev" "$2" "$ovpnzone" "Hotspot_Start"  
@@ -913,7 +909,6 @@ function Hotspot_Start {
   if [ "$torstart" == "yes" ]; then 
     do_tor start "$apperm"
     _ret=$?
-#   if [ $_ret -eq 0 ]; then showip "tor"; fi
   fi
 
   svc_showstat dnsmasq
@@ -1255,7 +1250,7 @@ function Hotspot_Setup {
   if [ "$1" != "noswpkg" ]; then
     _msg "install sw packages"
     apt-get -qy update
-    apt-get -qy install iw firewalld hostapd dnsmasq fbi wget curl qrencode $aptaddinstlist
+    apt-get -qy install iw firewalld hostapd dnsmasq fbi wget qrencode $aptaddinstlist
     ovpn_refresh
   fi
 # disable/stop services. starting by script if needed
