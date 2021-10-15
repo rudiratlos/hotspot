@@ -9,7 +9,6 @@ opt2="$2"
 opt3="$3"
 opt4="$4"
 
-autostart="yes"
 torstart="no"
 wgstart="no"
 nodogsplashstart="no"
@@ -150,10 +149,12 @@ ovpnzone="$pubzone"
 wgzone="$pubzone"
 trustzone="--zone=trusted"
 
+#autostrt not needed anymore since V0.960, use hotspot enable/disable instead
+autostart="yes"
+
 # etc defines
 startdate=`date +"%Y%m%d%H%M%S"`
 hsautocreate="$startdate file autocreated by $snam, do not edit" 
-
 RED="\033[0;31m"
 GREEN="\033[0;32m"
 NC="\033[0m" # No Color
@@ -433,20 +434,6 @@ function fwd_wipe {
   return $_ret
 }
 
-function fwd_ipt {
-# 1:add|remove 2:service|port|interface|... [3:value] [4:"--permanent"] [5:"--zone=<zone>"] [6:step]
-  _ret=1
-  step="fwd_ipt"
-#  iptables -A FORWARD -i wg0 -j ACCEPT
-#  iptables -A FORWARD -o wg0 -J ACCEPT
-  iptables -A -t -nat POSTROUTING -o wlan0 -j MASQUERADE 
-  iptables -A -t -nat POSTROUTING -o eth0 -j MASQUERADE
-  
-  firewall-cmd $4 --direct --$1-rule ipv4 nat POSTROUTING 0 -o wlan0
-  firewall-cmd $4 --direct --$1-rule ipv4 nat POSTROUTING 0 -o eth0
-  return $_ret
-}
-
 function fwd_def {
 # 1:add|remove 2:service|port|interface|... [3:value] [4:"--permanent"] [5:"--zone=<zone>"] [6:step]
 # /usr/lib/firewalld/services
@@ -523,12 +510,10 @@ function fwd_wg_part2 {
   step="fw2_wg "
   fwd_def "$1" interface "$wg_dev" "$2" "$wgzone" "$step"
   _ret=$? 
-
 # experimental
 #  iptables -A -t -nat POSTROUTING -o wlan0 -j MASQUERADE 
 #  iptables -A -t -nat POSTROUTING -o wlan1 -j MASQUERADE
 #  iptables -A -t -nat POSTROUTING -o eth0 -j MASQUERADE
-  
 #  firewall-cmd $2 --direct --$1-rule ipv4 nat POSTROUTING 0 -o wlan0 -j MASQUERADE 
 #  firewall-cmd $2 --direct --$1-rule ipv4 nat POSTROUTING 0 -o wlan1 -j MASQUERADE 
 #  firewall-cmd $2 --direct --$1-rule ipv4 nat POSTROUTING 0 -o eth0  -j MASQUERADE  
@@ -596,7 +581,6 @@ function fwd_do {
     _msg "    $step $opt $2"
     if [ "$2" == "ap" ];     then fwd_ap   "$_opt" "$apperm"; _ret=$?; fi
     if [ "$2" == "tor" ];    then fwd_tor  "$_opt" "$apperm"; _ret=$?; fi
-    if [ "$2" == "torold" ]; then ipt_do   "$_opt" "tor";     _ret=$?; fi
     if [ "$2" == "ovpn" ];   then fwd_ovpn "$_opt" "$apperm"; _ret=$?; fi
     if [ "$2" == "wg" ];     then fwd_wg   "$_opt" "$apperm"; _ret=$?; fi
   else
@@ -939,9 +923,9 @@ function do_fwd {
             _ret=$?
             ;;
         list)
-        	fwd_list "$2" "$3" "$4"
-        	_ret=$?
-        	;;
+            fwd_list "$2" "$3" "$4"
+            _ret=$?
+            ;;
         log)
             fwd_log "$2" "$3" "$4"
             _ret=$?
@@ -1431,7 +1415,6 @@ log-facility=/var/log/syslog
 # log-dhcp
 log-async
 EOF
-
   chmod 644 "$fil"
 
   fil="$_dir/05_${snam}_captiveportal.conf"
