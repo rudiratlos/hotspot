@@ -3,7 +3,7 @@ set +e
 
 snam="${0##*/}"
 
-hotspotver="V0.966"
+hotspotver="V0.967"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -95,6 +95,8 @@ hostapd_ssid=`cat $hostapdf | grep ^ssid= | awk -F "=" '{ print $2 }'`
 hostapd_psk=`cat $hostapdf | grep ^wpa_passphrase= | awk -F "=" '{ print $2 }'`
 if [ "$hostapd_ssid" == "" ]; then hostapd_ssid="$spot_ssid"; hostapd_psk="$spot_psk"; fi
 
+# free wg server for testing https://www.jagoanssh.com
+
 # wireguard defines
 wg_dev="wg0"
 wg_net="10.0.0"
@@ -108,6 +110,8 @@ wg_cfg="$wg_dev"
 wg_fil="$wg_top/$wg_cfg.conf"
 # e.g.       "URSgXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXJEPQY="
 wg_srvpubkey=""
+# e.g.       "6OosXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXR7qOs="
+wg_presharedkey=""
 # e.g.      "wg.example.com:51820"
 wg_endpoint="wg.example.com:51820"
 wg_publkeyf="vpn-public.key"
@@ -147,6 +151,9 @@ wgzone="$pubzone"
 trustzone="--zone=trusted"
 
 # etc defines
+startdate=`date +"%Y%m%d%H%M%S"`
+hsautocreate="$startdate file autocreated by $snam, do not edit" 
+
 RED="\033[0;31m"
 GREEN="\033[0;32m"
 NC="\033[0m" # No Color
@@ -160,14 +167,19 @@ function _msggrn { _msg "${GREEN}$1${NC}"; }
 function mark    { export $1=`pwd`; }
 
 function showip {
+  _ret=1
   _chkurl="https://myip.expert/"
 # _ext_ip0=$(wget -q -T10 -U "curl" -O - http://whatismyip.akamai.com/)
-  _ext_ip=`dig txt o-o.myaddr.test.l.google.com @ns1.google.com +short -4 | sed 's/"//g'`
-  _msg "    CheckIP external ${1}-ip: $_ext_ip"
-  _msg "    CheckIP $_chkurl"
-  wget -q -T10 -U "curl" -O - $_chkurl
-# curl -s $_chkurl
-  _ret=$?
+  _ext_ip=`dig txt o-o.myaddr.test.l.google.com @ns1.google.com +short -4 2>/dev/null | sed 's/"//g'`
+  if [ "$_ext_ip" != "" ]; then
+    _msg "    CheckIP external ${1}-ip: $_ext_ip"
+    _msg "    CheckIP $_chkurl"
+#   curl -s $_chkurl
+    wget -q -T10 -U "curl" -O - $_chkurl
+    _ret=$?
+  else
+    _msg "    CheckIP ERROR"
+  fi
   return $_ret
 }
 
@@ -240,6 +252,15 @@ function fil_bck {
   fi
 }
 
+function IP4_fwdSet {
+  if [ "$1" == "1" ]; then _opt="1"; else _opt="0"; fi
+# _fil="/proc/sys/net/ipv4/ip_forward"
+# echo "$_opt" > "$_fil"
+  sysctl -w net.ipv4.ip_forward=$_opt >/dev/null
+}
+
+function IP4_fwdShow { sysctl net.ipv4.ip_forward; }
+
 function Hotspot_Status {
   _msg "Status $snam ..."
   systemctl -n50 status $snam
@@ -304,6 +325,7 @@ function Hotspot_Disable  {
   systemctl disable  $snam.service
 }
 
+# + ##### ipt functions not used anymore #####
 function ipt_cln {
   echo "  ipt     $1 $2"
   iptables -t nat -F
@@ -357,6 +379,7 @@ function ipt_do {
     echo "  ipt     invalid option $1"
   fi
 }
+# - ##### ipt functions not used anymore #####
 
 function fwd_list {
   case "$1" in
@@ -410,6 +433,20 @@ function fwd_wipe {
   return $_ret
 }
 
+function fwd_ipt {
+# 1:add|remove 2:service|port|interface|... [3:value] [4:"--permanent"] [5:"--zone=<zone>"] [6:step]
+  _ret=1
+  step="fwd_ipt"
+#  iptables -A FORWARD -i wg0 -j ACCEPT
+#  iptables -A FORWARD -o wg0 -J ACCEPT
+  iptables -A -t -nat POSTROUTING -o wlan0 -j MASQUERADE 
+  iptables -A -t -nat POSTROUTING -o eth0 -j MASQUERADE
+  
+  firewall-cmd $4 --direct --$1-rule ipv4 nat POSTROUTING 0 -o wlan0
+  firewall-cmd $4 --direct --$1-rule ipv4 nat POSTROUTING 0 -o eth0
+  return $_ret
+}
+
 function fwd_def {
 # 1:add|remove 2:service|port|interface|... [3:value] [4:"--permanent"] [5:"--zone=<zone>"] [6:step]
 # /usr/lib/firewalld/services
@@ -457,6 +494,7 @@ function fwd_if {
 
 function fwd_vpns {
 # 1:add|remove [2:"--permanent"] [3:step]
+# remove regular interfaces, if tunnel will be build
   if [ "$1" == "add" ]; then _act="remove"; else _act="add"; fi
   fwd_if  "$_act" "$2" "$3"
   _ret=$?
@@ -485,6 +523,15 @@ function fwd_wg_part2 {
   step="fw2_wg "
   fwd_def "$1" interface "$wg_dev" "$2" "$wgzone" "$step"
   _ret=$? 
+
+# experimental
+#  iptables -A -t -nat POSTROUTING -o wlan0 -j MASQUERADE 
+#  iptables -A -t -nat POSTROUTING -o wlan1 -j MASQUERADE
+#  iptables -A -t -nat POSTROUTING -o eth0 -j MASQUERADE
+  
+#  firewall-cmd $2 --direct --$1-rule ipv4 nat POSTROUTING 0 -o wlan0 -j MASQUERADE 
+#  firewall-cmd $2 --direct --$1-rule ipv4 nat POSTROUTING 0 -o wlan1 -j MASQUERADE 
+#  firewall-cmd $2 --direct --$1-rule ipv4 nat POSTROUTING 0 -o eth0  -j MASQUERADE  
   return $_ret
 }
 
@@ -648,6 +695,7 @@ function wg_up {
   if [ "$1" == "" ]; then _cfg="$wg_dev"; else _cfg="$1"; fi
   if [ -f "$wg_top/$_cfg.conf" ]; then
     _msg "    $step   start cfg $_cfg $wg_ipcnet (experimental)"
+    IP4_fwdSet "1"
     systemctl start wg-quick@$_cfg
     _ret=$?
     if [ $_ret -eq 0 ]; then
@@ -705,6 +753,7 @@ function wg_keys {
   _msg "    $step create key files $wg_privkeyf $wg_publkeyf in $wg_top/"
   wg genkey | tee $wg_privkeyf | wg pubkey > $wg_publkeyf
   _ret=$?  
+  chmod 600 "$wg_privkeyf"
   cd $_wg
   return $_ret  
 }
@@ -712,25 +761,29 @@ function wg_keys {
 function wg_ccfg {
   _ret=1
   step="wg_ccfg"
-  _msg "    $step create client config file $wg_fil (experimental)"
+  _msg "    $step create client config file $wg_fil"
   if [ "$wg_endpoint" != "" ]; then
     if [ "$wg_srvpubkey" != "" ]; then
       if [ -f "$wg_top/$wg_privkeyf" ]; then
         _privkey="`cat $wg_top/$wg_privkeyf`"
-        echo "# file autocreated by hotspot wg config client" > $wg_fil
-        echo ""                             >> $wg_fil
-        echo "[Interface]"                  >> $wg_fil
-        echo "PrivateKey = $_privkey"       >> $wg_fil
-        echo "Address = $wg_ipcnet"         >> $wg_fil
+        echo "# $hsautocreate wg config client" > $wg_fil
+        echo ""                                   >> $wg_fil
+        echo "[Interface]"                        >> $wg_fil
+        echo "PrivateKey = $_privkey"             >> $wg_fil
+        echo "Address = $wg_ipcnet"               >> $wg_fil
         if [ "$wg_dns" != "" ]; then
-          echo "DNS = $wg_dns"              >> $wg_fil
+          echo "DNS = $wg_dns"                    >> $wg_fil
         fi
-        echo ""                             >> $wg_fil
-        echo "[Peer]"                       >> $wg_fil
-        echo "PublicKey = $wg_srvpubkey"    >> $wg_fil
-        echo "Endpoint = $wg_endpoint"      >> $wg_fil 
-        echo "AllowedIPs = 0.0.0.0/0, ::/0" >> $wg_fil   
+        echo ""                                   >> $wg_fil
+        echo "[Peer]"                             >> $wg_fil
+        echo "PublicKey = $wg_srvpubkey"          >> $wg_fil
+        if [ "$wg_presharedkey" != "" ]; then
+          echo "PresharedKey = $wg_presharedkey"  >> $wg_fil
+        fi
+        echo "Endpoint = $wg_endpoint"            >> $wg_fil       
+        echo "AllowedIPs = 0.0.0.0/0, ::/0"       >> $wg_fil   
         _ret=0
+        chmod 600 "$wg_fil"
       else
         _msgerr "missing $wg_top/$wg_privkeyf, use hotspot wg config genkeys"
       fi
@@ -746,14 +799,15 @@ function wg_ccfg {
 function wg_scfg {
   _ret=1
   step="wg_scfg"
-  _msg "    $step  create server config file $wg_fil (experimental)"
+  _msg "    $step  create server config file $wg_fil"
   if [ -f "$wg_top/$wg_publkeyf" ]; then
     _publkey="`cat $wg_top/$wg_publkeyf`"
-    echo "# file autocreated by hotspot wg config server" > $wg_fil
+    echo "# $hsautocreate wg config server" > $wg_fil
     echo ""                        >> $wg_fil
     echo "[Peer]"                  >> $wg_fil
     echo "PublicKey = $_publkey"   >> $wg_fil
     echo "AllowedIPs = $wg_ipcnet" >> $wg_fil  
+    chmod 600 "$wg_fil"
     _ret=0
   else
     _msgerr "missing $wg_top/$wg_publkeyf, use hotspot wg config genkeys"
@@ -907,6 +961,7 @@ function do_ovpn {
             if [ -f "$ovpnfil" ]; then
               _msg "    start   openvpn on $ovpn_dev"
               ovpn_check_running
+              IP4_fwdSet "1"
               _msg "    ovpn    on $ovpn_dev as service openvpn@$ovpncfg"
               systemctl start openvpn@$ovpncfg           
 #             wait max. 60sec for tun device gets an IPadr
@@ -963,7 +1018,7 @@ function do_tor {
   if [ -d "$tordir" ]; then
     case "$1" in
         start)
-            _msg "    start   tor (experimental)"
+            _msg "    start   tor"
             fwd_do "add" "tor"
             _ret=$?
 #           service dnsmasq stop
@@ -1091,7 +1146,7 @@ function Hotspot_Start {
   systemctl stop hostapd
   _msg "    stop    dnsmasq"
   systemctl stop dnsmasq
-  echo 1 > /proc/sys/net/ipv4/ip_forward
+  IP4_fwdSet "1"
   inst_ap_dev $wl0_dev
   sleep 1
 
@@ -1190,7 +1245,7 @@ function Hotspot_Stop {
   sleep 2
   _msg "    stop    dnsmasq"
   systemctl stop dnsmasq
-  echo 0 > /proc/sys/net/ipv4/ip_forward
+  IP4_fwdSet "0"
   fwd_do "remove" "ap"
   _ret=$?
   sleep 2
@@ -1215,7 +1270,7 @@ function Setup_rclocal {
   _msg "create $fil"
   cat <<EOF > "$fil"
 #!/bin/sh -e
-#file autocreated by $snam, do not edit
+# $hsautocreate
 
 # Print the IP address
 _IP=\$(hostname -I) || true
@@ -1313,33 +1368,31 @@ function Setup_dnsmasqconf {
     chmod 644 "$fil"
   fi
   
+  rm "$_dir/*_${snam}*" 2>/dev/null
+  
   fil="$_dir/01_${snam}.conf"
 # fil_bck "$fil" "$bckext"
   _msg "create $fil"
   cat <<EOF > "$fil"
-# Never forward plain names (without a dot or domain part)
-domain-needed
-no-dhcp-interface=eth0,wlan0
-listen-address=$ap_ip
-listen-address=127.0.0.1
-bind-interfaces
+# $hsautocreate
 
-log-facility=/var/log/syslog
-#log-queries
-#log-dhcp
-log-async
+# interface=$ap_dev                   # Use $snam interface
+no-dhcp-interface=eth0,wlan0    # Don't use these interfaces
+listen-address=$ap_ip       # Explicitly specify the $snam address to listen on
+listen-address=127.0.0.1        # Explicitly specify localhost ip4
+bind-interfaces                 # Bind to the interface to make sure we aren't sending things elsewhere
+domain-needed                   # Don't forward short names
+# bogus-priv                      # Never forward addresses in the non-routed address spaces
+
 local-ttl=2
 local-service
 localise-queries
-EOF
-  chmod 644 "$fil"
-  
-  fil="$_dir/03_${snam}_ns.conf"
-  _msg "create $fil"
-  cat <<EOF > "$fil"
+
+# ========== [ nameserver ] ==========
+
 no-hosts # Do not read /etc/hosts
 # Read additional hosts-file (not only /etc/hosts) to add entries into DNS
-#addn-hosts=/etc/${snam}/dnsmasq_static_hosts.list
+# addn-hosts=/etc/${snam}/dnsmasq_static_hosts.list
 expand-hosts
 domain=$ns_dom
 local=/$ns_dom/$ap_ip
@@ -1348,19 +1401,16 @@ local=/$ns_dom/$ap_ip
 host-record=$hostn.$ns_dom,$ap_ip
 server=/$ap_revnet.in-addr.arpa/$ap_ip
 ptr-record=$ap_revip.in-addr.arpa,$hostn.$ns_dom  
-EOF
-  chmod 644 "$fil"
-  
-  fil="$_dir/05_${snam}_dhcp.conf"
-  _msg "create $fil"
-  cat <<EOF > "$fil"
+
+# ========== [ dhcp ] ==========
+
 dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
 dhcp-mac=set:client_is_a_pi,DC:A6:32:*:*:*
 dhcp-reply-delay=tag:client_is_a_pi,2
 
 dhcp-range=$ap_net.50,$ap_net.199,255.255.255.0,12h
 dhcp-option=option:router,$ap_ip
-#dhcp-option=option:ntp-server,$ap_ip
+# dhcp-option=option:ntp-server,$ap_ip
 
 dhcp-option=vendor:MSFT,2,1i # Tell MS Windows to release a lease on shutdown
 dhcp-option=44,$ap_ip    # set netbios-over-TCP/IP aka WINS
@@ -1370,18 +1420,26 @@ dhcp-option=252,"\n"         # REQUIRED to get win7 to behave
 dhcp-option=160,http://10.3.141.1/index.html # RFC 7710
 
 # DHCPv4 Should be set when dnsmasq is definitely the only DHCP server on a network
-#dhcp-authoritative
+# dhcp-authoritative
 # DHCPv4 Server will attempt to ensure that an address is not in use before allocating it to a host
-#no-ping
+# no-ping
+
+# ========== [ etc ] ==========
+
+log-facility=/var/log/syslog
+# log-queries
+# log-dhcp
+log-async
 EOF
+
   chmod 644 "$fil"
 
-  fil="$_dir/10_${snam}_captiveportal.conf"
+  fil="$_dir/05_${snam}_captiveportal.conf"
   if [ "$dnsmasqcpf" == "yes" ]; then
 # fil_bck "$fil" "$bckext"
     _msg "create $fil"
     cat <<EOF > "$fil"
-#file autocreated, do not edit
+# $hsautocreate
 
 # Captive Portal
 # DNS Internet Connectivity Test Domains
@@ -1514,7 +1572,7 @@ function Hotspot_Setup {
   bckext=`date +"%Y%m%d%H%M%S"`
 
   Setup_rclocal     $1 $2
-  Setup_sysctlconf  $1 $2
+# Setup_sysctlconf  $1 $2
   Setup_dhcpcdconf  $1 $2
   Setup_dnsmasqconf $1 $2
   Setup_hostapddflt $1 $2
