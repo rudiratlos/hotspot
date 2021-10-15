@@ -317,13 +317,14 @@ hotspot tor stop                            # stop  tor service
 setup example for wg client, which should connect to remote wireguard server (wg.example.com:51820)
 
 ~~~bash
-hotspot modpar self wg_srvpubkey    "URSgXX...XXJEPQY="  # wg server's public key 
-hotspot modpar self wg_presharedkey "6OosXX...XXR7qOs="  # wg server's preshared key or leave blank
-hotspot modpar self wg_endpoint  "wg.example.com:51820"  # wg server's address and listening port
+                                                  # set default values
+hotspot modpar self wg_clientprivkey "uME..EGE="  # [Interface] PrivateKey
+hotspot modpar self wg_srvpubkey     "URS..PQY="  # [Peer] PublicKey 
+hotspot modpar self wg_presharedkey  "6Oo..qOs="  # [Peer] PresharedKey or leave blank
+hotspot modpar self wg_endpoint "wg.example.com:51820"  # [Peer] Endpoint
 hotspot modpar self wgstart yes  # will start wireguard tunnel at startup
 
-hotspot wg config genkeys  # create public and private key files for wg client in /etc/wireguard/
-hotspot wg config client   # create wg config file /etc/wireguard/wg0.conf
+hotspot wg config client   # create interactively wg config file /etc/wireguard/wg0.conf
 
 hotspot wg start           # start wireguard service
 hotspot wg stop            # stop  wireguard service

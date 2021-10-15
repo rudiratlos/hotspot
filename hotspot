@@ -98,21 +98,22 @@ if [ "$hostapd_ssid" == "" ]; then hostapd_ssid="$spot_ssid"; hostapd_psk="$spot
 
 # wireguard defines
 wg_dev="wg0"
-wg_net="10.0.0"
+# wg networks: pivpn: 10.6.0
+wg_net="10.6.0"
 wg_ipclient="${wg_net}.2"
-wg_ipcnet="${wg_ipclient}/32"
 wg_ipsrv="${wg_net}.1"
 wg_ipsnet="${wg_ipsrv}/24"
-wg_dns="8.8.8.8"
+wg_dns="9.9.9.9, 149.112.112.112"
 wg_top="/etc/wireguard"
 wg_cfg="$wg_dev"
 wg_fil="$wg_top/$wg_cfg.conf"
-# e.g.       "URSgXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXJEPQY="
+#e.g. format "URSgXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXJEPQY="
 wg_srvpubkey=""
-# e.g.       "6OosXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXR7qOs="
+wg_clientprivkey=""
 wg_presharedkey=""
+wg_listenport="51820"
 # e.g.      "wg.example.com:51820"
-wg_endpoint="wg.example.com:51820"
+wg_endpoint="wg.example.com:$wg_listenport"
 wg_publkeyf="vpn-public.key"
 wg_privkeyf="vpn-private.key"
 
@@ -678,7 +679,7 @@ function wg_up {
   step="wg_up"
   if [ "$1" == "" ]; then _cfg="$wg_dev"; else _cfg="$1"; fi
   if [ -f "$wg_top/$_cfg.conf" ]; then
-    _msg "    $step   start cfg $_cfg $wg_ipcnet (experimental)"
+    _msg "    $step   start cfg $_cfg $wg_ipclient (experimental)"
     IP4_fwdSet "1"
     systemctl start wg-quick@$_cfg
     _ret=$?
@@ -742,7 +743,36 @@ function wg_keys {
   return $_ret  
 }
 
-function wg_ccfg {
+function wg_scfg {
+  _ret=1
+  step="wg_scfg"
+  _msg "    $step  create server config file $wg_fil"
+  if [ -f "$wg_top/$wg_publkeyf" ] && [ -f "$wg_top/$wg_privkeyf" ]; then
+    _publkey="`cat $wg_top/$wg_publkeyf`"
+    _privkey="`cat $wg_top/$wg_privkeyf`"
+    echo "# $hsautocreate wg config server"   > $wg_fil
+    echo ""                                  >> $wg_fil
+    echo "[Interface]"                       >> $wg_fil
+    echo "PrivateKey = $_privkey"            >> $wg_fil
+    echo "Address = $wg_ipsrv/24"            >> $wg_fil
+    echo "MTU = 1420"                        >> $wg_fil
+    echo "ListenPort = $wg_listenport"       >> $wg_fil
+    echo ""                                  >> $wg_fil
+    echo "[Peer]"                            >> $wg_fil
+    echo "PublicKey = $_publkey"             >> $wg_fil
+    if [ "$wg_presharedkey" != "" ]; then
+      echo "PresharedKey = $wg_presharedkey" >> $wg_fil
+    fi
+    echo "AllowedIPs = $wg_ipclient/32"      >> $wg_fil  
+    chmod 600 "$wg_fil"
+    _ret=0
+  else
+    _msgerr "missing $wg_top/$wg_publkeyf, use hotspot wg config genkeys"
+  fi
+  return $_ret
+}
+
+function wg_ccfgOLD {
   _ret=1
   step="wg_ccfg"
   _msg "    $step create client config file $wg_fil"
@@ -754,7 +784,7 @@ function wg_ccfg {
         echo ""                                   >> $wg_fil
         echo "[Interface]"                        >> $wg_fil
         echo "PrivateKey = $_privkey"             >> $wg_fil
-        echo "Address = $wg_ipcnet"               >> $wg_fil
+        echo "Address = $wg_ipclient/24"          >> $wg_fil
         if [ "$wg_dns" != "" ]; then
           echo "DNS = $wg_dns"                    >> $wg_fil
         fi
@@ -780,22 +810,102 @@ function wg_ccfg {
   return $_ret
 }
 
-function wg_scfg {
+function wg_ccfg {
+# 1:endpoint 2:ipaddr 3:dns 4:privkey 5:pubkey 6:preshrkey 
   _ret=1
-  step="wg_scfg"
-  _msg "    $step  create server config file $wg_fil"
-  if [ -f "$wg_top/$wg_publkeyf" ]; then
-    _publkey="`cat $wg_top/$wg_publkeyf`"
-    echo "# $hsautocreate wg config server" > $wg_fil
-    echo ""                        >> $wg_fil
-    echo "[Peer]"                  >> $wg_fil
-    echo "PublicKey = $_publkey"   >> $wg_fil
-    echo "AllowedIPs = $wg_ipcnet" >> $wg_fil  
-    chmod 600 "$wg_fil"
-    _ret=0
+  step="wg_ccfg"
+  _msg "    $step create client config file $wg_fil"
+  
+  _endpoint="$1";  if [ "_endpoint" == "" ];  then _endpoint="$wg_endpoint"; fi
+  _ipaddr="$2";    if [ "_ipaddr" == "" ];    then _ipaddr="$wg_ipclient"; fi
+  _dns="$3";       if [ "_dns" == "" ];       then _dns="$wg_dns"; fi
+  _privkey="$4";   if [ "_privkey" == "" ];   then _privkey="$wg_clientprivkey"; fi
+  _srvpubkey="$5"; if [ "_srvpubkey" == "" ]; then _srvpubkey="$wg_srvpubkey"; fi
+  _preshrkey="$6"; if [ "_preshrkey" == "" ]; then _preshrkey="$wg_presharedkey"; fi   
+  
+  if [ "$_endpoint" != "" ]; then
+    if [ "$_srvpubkey" != "" ]; then
+      if [ "$_privkey" != "" ]; then
+        if [ "$_dns" != "" ]; then
+          if [ "$_ipaddr" != "" ]; then
+            echo "# $hsautocreate ($snam wg config client)" > $wg_fil
+            echo ""                                   >> $wg_fil
+            echo "[Interface]"                        >> $wg_fil
+            echo "PrivateKey = $_privkey"             >> $wg_fil
+            echo "Address = $_ipaddr/24"              >> $wg_fil
+            if [ "$_dns" != "" ]; then
+              echo "DNS = $_dns"                      >> $wg_fil
+            fi
+            echo ""                                   >> $wg_fil
+            echo "[Peer]"                             >> $wg_fil
+            echo "PublicKey = $_srvpubkey"            >> $wg_fil
+            if [ "$_preshrkey" != "" ]; then
+              echo "PresharedKey = $_preshrkey"       >> $wg_fil
+            fi
+            echo "Endpoint = $_endpoint"              >> $wg_fil       
+            echo "AllowedIPs = 0.0.0.0/0, ::/0"       >> $wg_fil   
+            chmod 600 "$wg_fil"
+            _ret=$?
+          else
+            _msgerr "no client address, use hotspot modpar self wg_ipclient \"<ipaddr>\""
+          fi
+        else
+          _msgerr "no dns, use hotspot modpar self wg_dns \"<dnsserver>\""
+        fi
+      else
+        _msgerr "no client private key defined, use hotspot modpar self wg_clientprivkey \"<wireguard_client_private_key>\""
+      fi
+    else
+      _msgerr "no server public key defined, use hotspot modpar self wg_srvpubkey \"<wireguard_server_public_key>\""
+    fi
   else
-    _msgerr "missing $wg_top/$wg_publkeyf, use hotspot wg config genkeys"
+    _msgerr "no server Endpoint defined, use hotspot modpar self wg_endpoint \"<wireguard_server_endpoint>\""
   fi
+  return $_ret
+}
+
+function _gi {
+# 1:question 2:defaultval 3:mode
+  getinfo=""
+  while [ "$getinfo" == "" ]; do
+    read -p "[?] pls. enter $1: " -r getinfo
+    case "$3" in
+      0) # input can be empty
+         break
+         ;; 
+      1) # use non empty defaultval, if getinfo is empty
+         if [ "$2" != "" ] && [ "$getinfo" == "" ]; then
+           getinfo="$2"
+           break
+         fi
+         ;;
+    esac
+  done
+}
+
+function wg_ccfg_interactive {
+  step="wg_ccfg_interactive"
+  _msg "    $step create wireguard client config file $wg_fil"
+  _msg "    $step default values taken from $snam modpar self <name> <value>"
+
+  _gi "[Interface] PrivateKey ($wg_clientprivkey)" "$wg_clientprivkey" "1"; _privkey="$getinfo";
+  _gi "[Interface] Address ($wg_ipclient)" "$wg_ipclient" "1"; _ipaddr="$getinfo";
+  _gi "[Interface] DNS ($wg_dns)" "$wg_dns" "1"; _dns="$getinfo";
+  _gi "[Peer] PublicKey ($wg_srvpubkey)" "$wg_srvpubkey" "1"; _srvpubkey="$getinfo";
+  _gi "[Peer] PresharedKey ($wg_presharedkey)" "$wg_presharedkey" "0"; _preshrkey="$getinfo";
+  _gi "[Peer] Endpoint ($wg_endpoint)" "$wg_endpoint" "1"; _endpoint="$getinfo";
+  
+#  echo "PrivateKey:   $_privkey"
+#  echo "Address:      $_ipaddr"
+#  echo "DNS:          $_dns"
+#  echo "PublicKey:    $_srvpubkey"
+#  echo "Endpoint:     $_endpoint"
+#  echo "PresharedKey: $_preshrkey"
+ 
+  wg_ccfg "$_endpoint" "$_ipaddr" "$_dns" "$_privkey" "$_srvpubkey" "$_preshrkey"
+  _ret=$?
+  
+  if [ $_ret -eq 0 ]; then cat $wg_fil; fi
   return $_ret
 }
 
@@ -812,24 +922,23 @@ function wg_menu {
             ;;
         config)
             case "$2" in
-              genkeys)
-                wg_keys "$3"
-                _ret=$?
-                ;;
               client)
-                wg_ccfg "$3"
+                wg_ccfg_interactive
                 _ret=$?
                 ;;
-              server)
-                wg_scfg "$3"
-                _ret=$?
-                ;;
-              *)
-                echo "Usage: $snam wg config [client | server | genkeys]"
+#             server)
+#               wg_scfg "$3"
+#               _ret=$?
+#               ;;
+#             genkeys)
+#               wg_keys "$3"
+#               _ret=$?
+#               _msgerr "client only"
+#               ;;
+              *) echo "Usage: $snam wg config [client]"
             esac
             ;;
-        *)
-            echo "Usage: $snam wg [start [cfg] | stop [cfg] | config]"
+        *) echo "Usage: $snam wg [start [cfg] | stop [cfg] | config client]"
   esac
   return $_ret
 }
