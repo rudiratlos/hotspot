@@ -737,6 +737,7 @@ function wg_dwn {
     fwd_do       "remove" "wg"
     _ret=$? 
     fwd_wg_part2 "remove" "$apperm"
+    checkIP "wg-OFF"
   else 
     _msgerr "$step missing $wg_top/$_cfg.conf, use hotspot wg config"
   fi
@@ -1103,6 +1104,7 @@ function do_ovpn {
             _ret=$? 
             fwd_ovpn_part2 "remove" "$apperm"
             _ret=$? 
+            checkIP "ovpn-OFF"
             ;;
         refresh)
             _msg "    refresh openvpn config files"
@@ -1139,6 +1141,7 @@ function do_tor {
             service tor     stop
             fwd_do "remove" "tor"
             _ret=$?
+#           checkIP "tor-OFF"
 #           service dnsmasq restart
 #           fwd_log off
             ;;
