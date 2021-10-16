@@ -168,7 +168,7 @@ function _msgred { _msg "${RED}$1${NC}"; }
 function _msggrn { _msg "${GREEN}$1${NC}"; }
 function mark    { export $1=`pwd`; }
 
-function showip {
+function checkIP {
   _ret=1
   _chkurl="https://myip.expert/"
 # _ext_ip0=$(wget -q -T10 -U "curl" -O - http://whatismyip.akamai.com/)
@@ -179,8 +179,21 @@ function showip {
 #   curl -s $_chkurl
     wget -q -T10 -U "curl" -O - $_chkurl
     _ret=$?
+    case "$1" in
+      wg) wg show ;;
+    esac
   else
-    _msg "    CheckIP ERROR"
+    _msg "    CheckIP ERROR, no internet connection"
+    case "$1" in
+      wg) 
+        _port=$(cat "/etc/wireguard/$wg_dev.conf" | grep "ndpoint" | awk -F ":" '{ print $2 }')
+        _msg "    check your router config, is $1 outgoing port $_port opened?"
+        ;;
+      ovpn)
+        _port=""
+        _msg "    check your router config, is $1 outgoing port $_port opened?"
+        ;;
+    esac
   fi
   return $_ret
 }
@@ -679,7 +692,7 @@ function wg_up {
   step="wg_up"
   if [ "$1" == "" ]; then _cfg="$wg_dev"; else _cfg="$1"; fi
   if [ -f "$wg_top/$_cfg.conf" ]; then
-    _msg "    $step   start cfg $_cfg $wg_ipclient (experimental)"
+    _msg "    $step   start cfg $_cfg (experimental)"
     IP4_fwdSet "1"
     systemctl start wg-quick@$_cfg
     _ret=$?
@@ -699,7 +712,7 @@ function wg_up {
         _ret=$?
         fwd_wg_part2 "add" "$apperm"
         _ret=$?
-        if [ $_ret -eq 0 ]; then showip "wg"; fi
+        if [ $_ret -eq 0 ]; then checkIP "wg"; fi
 #       fwd_stat "wg"
       else
         _msgerr "  $step   no IPassignment on $wg_dev"
@@ -1071,7 +1084,7 @@ function do_ovpn {
                 fwd_do         "add" "ovpn"
                 fwd_ovpn_part2 "add" "$apperm"
                 _ret=$?
-                if [ $_ret -eq 0 ]; then showip "ovpn"; fi
+                if [ $_ret -eq 0 ]; then checkIP "ovpn"; fi
 #               fwd_stat "ovpn"
               else
                 _msgerr "  ovpn    no IPassignment on $ovpn_dev"
@@ -1116,7 +1129,7 @@ function do_tor {
             _ret=$?
 #           service dnsmasq stop
             service tor     restart
-#           if [ $_ret -eq 0 ]; then showip "tor"; fi
+#           if [ $_ret -eq 0 ]; then checkIP "tor"; fi
             _msg "    check   tor functionality: https://check.torproject.org/"
 #           fwd_log all
 #           fwd_stat "tor"
