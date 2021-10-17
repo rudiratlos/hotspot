@@ -3,7 +3,7 @@ set +e
 
 snam="${0##*/}"
 
-hotspotver="V0.967"
+hotspotver="V0.968"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -36,6 +36,7 @@ ch_prio=${ch_2GHz_ovrlap}" "${ch_2GHz_022MHz}" "${ch_5GHz_020MHz}" "${ch_5GHz_04
 # wl1_dev: external wlan adaptor (optional)
 wl0_dev=""
 wl1_dev=""
+wap_dev=""
 ap_dev="ap0"
 ap_devmac="b8:27:eb:00:00:00"
 ap_net="10.3.141"
@@ -43,6 +44,7 @@ ap_devext="$eth_dev"
 ns_dom="local"
 
 ap_restricted="no"
+ap_useextdev="no"
 ap_share="no"
 ap_ip="${ap_net}.1"
 ap_subn="${ap_net}.255"
@@ -214,11 +216,22 @@ function qrcode_on_oled  {
   fi
 }
 
+function phy_get {
+  if [ "$1" != "" ]; then
+    phy=$(ls /sys/class/ieee80211/*/device/net/ | \
+            sed -z 's/\n\n/+++++/g' | sed -z 's/\n/ /g' | \
+            sed 's/+++++/\n/g' | grep "$1" | \
+            awk -F "/" '{ print $5 }')
+  else
+    phy=""
+  fi
+}
+
 function Show_Defines {
   _msg "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
-  _msg "wl0_dev:$wl0_dev wl0_subn:$wl0_subn wl0_ip:$wl0_ip"
-  _msg "wl1_dev:$wl1_dev wl1_subn:$wl1_subn wl1_ip:$wl1_ip"
-  _msg "ap_shar:$ap_share hs_try:$hs_try $wl1_dev avail: $wl1_avail"
+  _msg "wl0_dev:$wl0_dev wl0_subn:$wl0_subn wl0_ip:$wl0_ip wl0_phy:$wl0_phy wl0_drv:$wl0_drv"
+  _msg "wl1_dev:$wl1_dev wl1_subn:$wl1_subn wl1_ip:$wl1_ip wl1_phy:$wl1_phy wl1_drv:$wl1_drv"
+  _msg "wap_dev:$wap_dev ap_shar:$ap_share hs_try:$hs_try $wl1_dev avail: $wl1_avail wap_drv:$wap_drv"
   _msg "wl0_dev:$wl0_dev wl0_devs: $wl0_devs"
   _msg "wl1_dev:$wl1_dev wl1_devs: $wl1_devs"
   _msg "apdvext:$ap_devext"
@@ -230,10 +243,21 @@ function Hotspot_Defines {
   wl0_ip=`ip addr show dev "$wl0_dev" 2>/dev/null   | awk '/inet / { print $2 }'`
   eth_subn=`ip addr show dev "$eth_dev" 2>/dev/null | awk '/inet / { print $4 }'`
   wl0_subn=`ip addr show dev "$wl0_dev" 2>/dev/null | awk '/inet / { print $4 }'`
+  wl0_drv=$(ethtool -i "$wl0_dev" | grep driver | awk -F ": " '{ print $2 }')
+  wl0_cap=""
+  phy_get "$wl0_dev"; wl0_phy="$phy"
+
+  _apok=$(iw $wl0_phy info | grep "Supported interface modes" -A 8 | grep --no-ignore-case "AP" | xargs)
+  if [ "$_apok" != "" ]; then wl0_cap=$( echo "$wl0_cap AP" | xargs); fi
+  
+  wl1_drv=""; wl1_cap=""
+  
   if [ "$wl1_dev" != "" ]; then
     wl1_avail="yes"
     wl1_ip=`ip addr show dev "$wl1_dev" 2>/dev/null   | awk '/inet / { print $2 }'`
     wl1_subn=`ip addr show dev "$wl1_dev" 2>/dev/null | awk '/inet / { print $4 }'`
+    wl1_drv=$(ethtool -i "$wl1_dev" | grep driver | awk -F ": " '{ print $2 }')
+    phy_get "$wl1_dev"; wl1_phy="$phy"
     if [ "$eth_ip" == "" ]; then ap_devext="$wl1_dev"; fi
   else
     if [ "$eth_ip" == "" ]; then ap_devext="$wl0_dev"; fi
@@ -241,6 +265,24 @@ function Hotspot_Defines {
   hs_try="no"
   if [ "$eth_subn" != "$ap_subn" ]; then
     if [ "$wl1_avail" == "yes" ] || [ "$eth_subn" == "$wl0_subn" ] || [ "$wl0_subn" == "" ]; then hs_try="yes"; fi
+  fi
+
+  case "$wl0_drv" in
+    brcmfmac) wl0_drv="nl80211" ;; # rpi4 on board driver
+  esac
+  
+  wap_dev="$wl0_dev"
+  wap_drv="$wl0_drv"
+  
+  if [ "$wl1_avail" == "yes" ] && [ "$wl1_phy" != "" ] && [ "$ap_useextdev" == "yes" ]; then
+#   echo "$wl1_dev $wl1_phy $wl1_drv"
+    _apok=$(iw $wl1_phy info | grep "Supported interface modes" -A 8 | grep --no-ignore-case "AP" | xargs)
+    if [ "$_apok" != "" ]; then
+      echo "$wl1_dev $wl1_phy $wl1_drv can work in AP mode (highly experimental, may not work)"
+      wl1_cap=$(echo "$wl1_cap AP" | xargs)
+      wap_dev="$wl1_dev"
+#     wap_drv="$wl1_drv"      
+    fi
   fi
 
   acc_info=""
@@ -969,12 +1011,16 @@ function stop_ap_dev {
 
 function inst_ap_dev {
   _ret=1
+  wdrv="$2"
   wdev="$1"
   if [ "$wdev" != "$ap_dev" ] && [ "$wdev" != "" ]; then
-    _msg "    install & check dev $ap_dev"
+    _msg "    install & check dev $ap_dev drv $wdrv"
     apnet255=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $4 }'`
     if [ "$ap_subn" != "$apnet255" ]; then
       _msg "    assign  dev $ap_dev $ap_ipanet on $wdev"
+      ip -force link set dev "$wdev" down 
+      ip addr flush dev "$wdev"
+#     sleep 3
       iw dev $wdev interface add $ap_dev type __ap
       stop_ap_dev "$ap_dev"
 #     ip link set $ap_dev address $ap_devmac
@@ -998,7 +1044,7 @@ function wlan {
   if [ "$2" != "" ]; then wl_dev="$2"; fi
   case "$1" in
         start)
-            _msg "    start   wlan    $wl_dev"
+            _msg "    start   wlan   $wl_dev"
             systemctl restart dhcpcd
             _ret=$?
 #           wpa_cli -i $wl_dev reconfigure
@@ -1216,6 +1262,17 @@ function Mdfy_Chan {
   return $_ret
 }
 
+function Mdfy_Driver {
+# 1: nl80211
+  _ret=1
+  if [ "$1" != "" ]; then
+    _msg "    modify  driver: $1"
+    Mod_Para "hostapd" "driver" "$wap_drv"
+    _ret=0
+  fi
+  return $_ret
+}
+
 function svc_showstat {
   if [ "$1" != "" ]; then
     msg="`service $1 status | grep -i \"Active:\" | awk -F " " '{ print $2" "$3 }'`"
@@ -1231,8 +1288,8 @@ function Hotspot_Start {
   _msg "starting    $snam $hotspotver usr:$usr"
   _msg "    extIP   router  $ext_ip"
   _msg "    ETHER   $eth_dev    $eth_ip"
-  _msg "    WLANint $wl0_dev   $wl0_ip"
-  _msg "    WLANext $wl1_dev   $wl1_ip"
+  _msg "    WLANint $wl0_dev   $wl0_phy $wl0_ip $wl0_drv $wl0_cap"
+  _msg "    WLANext $wl1_dev   $wl1_phy $wl1_ip $wl1_drv $wl1_cap"
   chanh=`cat "$hostapdf" | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
   if [ "$chanh" != "0" ]; then
     if [ "$ap_share" != "yes" ] && { [ "$wl1_avail" == "yes" ] || [ "$eth_ip" != "" ]; }; then
@@ -1250,15 +1307,17 @@ function Hotspot_Start {
   else
     _msg "    UseAuto channel selection"
   fi
-  if [ "$1" == "nowlan" ]; then wlan stop $wl0_dev; fi
+  
+  Mdfy_Driver "$wap_drv"
+  
+  if [ "$1" == "nowlan" ]; then wlan stop $wap_dev; fi
   _msg "    stop    hostapd"
   systemctl stop hostapd
   _msg "    stop    dnsmasq"
   systemctl stop dnsmasq
   IP4_fwdSet "1"
-  inst_ap_dev $wl0_dev
-  sleep 1
-
+  inst_ap_dev "$wap_dev" "$wap_drv" 
+  sleep 1  
   fwd_do   "add" "ap"
   _msg "    start   hostapd restart"
   systemctl restart  hostapd
@@ -1663,7 +1722,7 @@ function Hotspot_Setup {
   if [ "$1" != "noswpkg" ]; then
     _msg "install sw packages"
     apt-get -qy update
-    apt-get -qy install iw firewalld hostapd dnsmasq fbi wget qrencode $aptaddinstlist
+    apt-get -qy install iw firewalld hostapd dnsmasq fbi wget ethtool qrencode $aptaddinstlist
     ovpn_refresh
   fi
 # disable/stop services. starting by script if needed
