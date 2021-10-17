@@ -1,9 +1,8 @@
 #!/bin/bash
 set +e
 
+hotspotver="V0.969"
 snam="${0##*/}"
-
-hotspotver="V0.968"
 opt1="$1"
 opt2="$2"
 opt3="$3"
@@ -229,9 +228,9 @@ function phy_get {
 
 function Show_Defines {
   _msg "eth_dev:$eth_dev eth_subn:$eth_subn ap_ipanet:$ap_ipanet"
-  _msg "wl0_dev:$wl0_dev wl0_subn:$wl0_subn wl0_ip:$wl0_ip wl0_phy:$wl0_phy wl0_drv:$wl0_drv"
-  _msg "wl1_dev:$wl1_dev wl1_subn:$wl1_subn wl1_ip:$wl1_ip wl1_phy:$wl1_phy wl1_drv:$wl1_drv"
-  _msg "wap_dev:$wap_dev ap_shar:$ap_share hs_try:$hs_try $wl1_dev avail: $wl1_avail wap_drv:$wap_drv"
+  _msg "wl0_dev:$wl0_dev wl0_subn:$wl0_subn wl0_ip:$wl0_ip wl0_phy:$wl0_phy wl0_drv:$wl0_drv wl0_cap:$wl0_cap"
+  _msg "wl1_dev:$wl1_dev wl1_subn:$wl1_subn wl1_ip:$wl1_ip wl1_phy:$wl1_phy wl1_drv:$wl1_drv wl1_cap:$wl1_cap"
+  _msg "wap_dev:$wap_dev ap_shar:$ap_share hs_try:$hs_try $wl1_dev avail: $wl1_avail wap_drv:$wap_drv wap_cap:$wap_cap"
   _msg "wl0_dev:$wl0_dev wl0_devs: $wl0_devs"
   _msg "wl1_dev:$wl1_dev wl1_devs: $wl1_devs"
   _msg "apdvext:$ap_devext"
@@ -247,8 +246,11 @@ function Hotspot_Defines {
   wl0_cap=""
   phy_get "$wl0_dev"; wl0_phy="$phy"
 
-  _apok=$(iw $wl0_phy info | grep "Supported interface modes" -A 8 | grep --no-ignore-case "AP" | xargs)
-  if [ "$_apok" != "" ]; then wl0_cap=$( echo "$wl0_cap AP" | xargs); fi
+  _hlp=$(iw $wl0_phy info | grep "Supported interface modes" -A 8 | grep "AP" | xargs)
+  if [ "$_hlp" != "" ]; then wl0_cap=$(echo "$wl0_cap AP" | xargs); fi
+  
+  _hlp=$(iw $wl0_phy info | grep "VHT" | xargs)
+  if [ "$_hlp" != "" ]; then wl0_cap=$(echo "$wl0_cap VHT" | xargs); fi
   
   wl1_drv=""; wl1_cap=""
   
@@ -273,14 +275,19 @@ function Hotspot_Defines {
   
   wap_dev="$wl0_dev"
   wap_drv="$wl0_drv"
+  wap_cap="$wl0_cap"
   
   if [ "$wl1_avail" == "yes" ] && [ "$wl1_phy" != "" ] && [ "$ap_useextdev" == "yes" ]; then
 #   echo "$wl1_dev $wl1_phy $wl1_drv"
-    _apok=$(iw $wl1_phy info | grep "Supported interface modes" -A 8 | grep --no-ignore-case "AP" | xargs)
-    if [ "$_apok" != "" ]; then
-      echo "$wl1_dev $wl1_phy $wl1_drv can work in AP mode (highly experimental, may not work)"
+    _hlp=$(iw $wl1_phy info | grep "VHT" | xargs)
+    if [ "$_hlp" != "" ]; then wl1_cap=$(echo "$wl1_cap VHT" | xargs); fi
+  
+    _hlp=$(iw $wl1_phy info | grep "Supported interface modes" -A 8 | grep "AP" | xargs)
+    if [ "$_hlp" != "" ]; then
+#     echo "    $wl1_phy    $wl1_dev   $wl1_drv can work in AP mode (highly experimental, may not work)"
       wl1_cap=$(echo "$wl1_cap AP" | xargs)
       wap_dev="$wl1_dev"
+      wap_cap="$wl1_cap"
 #     wap_drv="$wl1_drv"      
     fi
   fi
@@ -1011,10 +1018,11 @@ function stop_ap_dev {
 
 function inst_ap_dev {
   _ret=1
+  wcap="$3"
   wdrv="$2"
   wdev="$1"
   if [ "$wdev" != "$ap_dev" ] && [ "$wdev" != "" ]; then
-    _msg "    install & check dev $ap_dev drv $wdrv"
+    _msg "    install & check dev $ap_dev drv $wdrv $wcap"
     apnet255=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $4 }'`
     if [ "$ap_subn" != "$apnet255" ]; then
       _msg "    assign  dev $ap_dev $ap_ipanet on $wdev"
@@ -1262,14 +1270,15 @@ function Mdfy_Chan {
   return $_ret
 }
 
-function Mdfy_Driver {
-# 1: nl80211
-  _ret=1
-  if [ "$1" != "" ]; then
-    _msg "    modify  driver: $1"
+function Mdfy_hostapd {
+# 1:wlanX 2:nl80211 3:AP VHT
+  if [ "$wap_drv" != "" ]; then
     Mod_Para "hostapd" "driver" "$wap_drv"
-    _ret=0
   fi
+  
+  _hlp=$(echo "$wap_cap" | grep "VHT")
+  if [ "$_hlp" != "" ]; then _hlp="1"; else _hlp="0"; fi
+  Mod_Para "hostapd" "ieee80211ac" "$_hlp"
   return $_ret
 }
 
@@ -1308,7 +1317,7 @@ function Hotspot_Start {
     _msg "    UseAuto channel selection"
   fi
   
-  Mdfy_Driver "$wap_drv"
+  Mdfy_hostapd "$wap_dev" "$wap_drv" "$wap_cap"
   
   if [ "$1" == "nowlan" ]; then wlan stop $wap_dev; fi
   _msg "    stop    hostapd"
@@ -1316,7 +1325,7 @@ function Hotspot_Start {
   _msg "    stop    dnsmasq"
   systemctl stop dnsmasq
   IP4_fwdSet "1"
-  inst_ap_dev "$wap_dev" "$wap_drv" 
+  inst_ap_dev "$wap_dev" "$wap_drv" "$wap_cap" 
   sleep 1  
   fwd_do   "add" "ap"
   _msg "    start   hostapd restart"
@@ -1647,6 +1656,10 @@ EOF
   chmod 600 "$fil"
 }
 
+#ieee80211ac : 5GHz
+#ieee80211n
+#ieee80211d: amendment to the IEEE 802.11
+
 function Setup_hostapdconf {
   fil="/etc/hostapd/hostapd.conf"
   fil_bck "$fil" "$bckext"
@@ -1663,7 +1676,6 @@ channel=6
 hw_mode=g
 
 country_code=$spot_cntry2
-ieee80211d=1
 
 ssid=$spot_ssid
 wpa_passphrase=$spot_psk
@@ -1673,8 +1685,9 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 
 ieee80211n=1
-
+ieee80211d=1
 ieee80211ac=1
+
 wmm_enabled=1
 macaddr_acl=0
 auth_algs=1
