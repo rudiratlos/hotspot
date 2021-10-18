@@ -31,14 +31,14 @@ else
   freq_filter="2"
 fi
 
-# valid channels and selection prio
+# valid channels
 ch_2GHz_ovrlap="2 3 4 5 7 8 9 10 12 13"
 ch_2GHz_022MHz="1 6 11"
 ch_5GHz_020MHz="32 36 40 44 48 52 56 60 64 100 104 108 112 116 120 124 128 132 136 140 144 149 153 157 161 165 169 173"
 ch_5GHz_040MHz="34 38 46 54 62 102 110 118 126 134 142 151 159"
 ch_5GHz_080MHz="42 58 106 122 138 155"
 ch_5GHz_160MHz="50 114"
-ch_prio=${ch_2GHz_ovrlap}" "${ch_2GHz_022MHz}" "${ch_5GHz_020MHz}" "${ch_5GHz_040MHz}" "${ch_5GHz_080MHz}" "${ch_5GHz_160MHz}
+
 # wl0_dev: on board wlan (e.g. wlan0)
 # wl1_dev: external wlan adaptor (optional)
 wl0_dev=""
@@ -1226,45 +1226,94 @@ function do_syslog {
   tail -500 /var/log/syslog | grep --color -a $lins "${snam}"
 }
 
+function Chan_in_Group {
+  _ret=1
+  _hlp=$(echo "$1" | grep "$chanw")
+  if [ "$_hlp" != "" ]; then _ret=0; fi
+  return $_ret
+}
+
+function Chan_Group {
+# determine channels bandwidth group
+  case "$chanw" in
+    2|3|4|5|7|8|9|10|12|13)
+       changrp="2GHZ-OVRLAP" ;;
+    1|6|11)                 
+       changrp="2GHZ-22MHZ" ;;
+    32|36|40|44|48|52|56|60|64|100|104|108|112|116|120|124|128|132|136|140|144|149|153|157|161|165|169|173)
+       changrp="5GHZ-20MHZ" ;;
+    34|38|46|54|62|102|110|118|126|134|142|151|159)           
+       changrp="5GHZ-40MHZ" ;;
+    42|58|106|122|138|155)
+       changrp="5GHZ-80MHZ" ;;
+    50|114)
+       changrp="5GHZ-160MHZ" ;;
+    *) changrp="" ;;
+  esac
+}
+
+function Check_Chan {
+  isint "$chanw"
+  if [ $? -ne 0 ]; then
+    isint "$ch_dflt"
+    if [ $? -eq 0 ]; then chanw="$ch_dflt"; else chanw="6"; fi
+  fi
+  Chan_Group
+}
+
 function Find_Chan {
 # find best (least used) channel
 # Find_Chan "wlan1" "11" "104" "5"
-# OUT: chanw
+# hotspot findchan wlan1 2 dbg
+# OUT: chanw changrp
   _ret=1
   chanw=""
-  chflg=""
-  chvtc=""
-  chhtc=""
-  if [ "$ch_autofind" -gt "0" ]; then
+  _filter="$4"
+  if [ "$1" != "" ] && [ "$3" == "dbg" ]; then 
+    _dbg=1
+    _filter="$2"
+  else _dbg=0; fi
+
+  case "$_filter" in             # valid channels and selection prio
+    2) ch_prio=${ch_2GHz_ovrlap}" "${ch_2GHz_022MHz} ;; 
+    5) ch_prio=${ch_5GHz_020MHz}" "${ch_5GHz_040MHz}" "${ch_5GHz_080MHz}" "${ch_5GHz_160MHz} ;;
+    *) ch_prio=${ch_5GHz_020MHz}" "${ch_5GHz_040MHz}" "${ch_5GHz_080MHz}" "${ch_5GHz_160MHz}" "${ch_2GHz_ovrlap}" "${ch_2GHz_022MHz} ;;
+  esac
+  
+  if [ "$ch_autofind" -gt "0" ] || [ $_dbg -eq 1 ]; then
     if [ "$1" != "" ]; then
-      fil="/tmp/$1_$4_scan.txt"
-      iwlist $1 chan 2>/dev/null | grep -i " : $4" | sed 's/  //g' | sed 's/Channel 0//g' | sed 's/Channel //g' | awk -F " " '{ print $1 }' > $fil
-      iwlist $1 scan 2>/dev/null | grep -i "Frequency:$4" | sort | uniq -c | sort -n | sed 's/  //g' | sed 's/)//g' | awk -F " " '{ print $5 }' >> $fil
+      chanw="$ch_dflt"
+      Check_Chan
+      fil="/tmp/$1_${_filter}_scan.txt"
+      iwlist $1 chan 2>/dev/null | grep -i " : $_filter" | sed 's/  //g' | sed 's/Channel 0//g' | sed 's/Channel //g' | awk -F " " '{ print $1 }' > ${fil}.tmp
+      iwlist $1 scan 2>/dev/null | grep -i "Frequency:$_filter" | sort | sed 's/  //g' | sed 's/)//g' | awk -F "hannel " '{ print $2 }' >> ${fil}.tmp
+      cat ${fil}.tmp | sort | uniq -c | sed 's/  //g' | sort > $fil
       linr=0
       ch_prio_arr=($ch_prio)
       while read line; do
         linr=$(($linr+1))
         ch_use=`echo "$line" | awk '{print $1}'`
         ch_num=`echo "$line" | awk '{print $2}'`
-#       echo "ch: $ch_num use: $ch_use"
-        if [ "$linr" -le "1" ]; then chanw="$ch_num"; fi
-#       echo "linr: $linr ch: $chanw"
+#       if [ $_dbg -eq 1 ]; then echo "ch: $ch_num use: $ch_use line: $line"; fi
+#       if [ "$linr" -le "1" ]; then chanw="$ch_num"; fi
+        if [ $_dbg -eq 1 ]; then echo "linr:$linr foundCH:$chanw"; fi
         idx=0
         while [ "${ch_prio_arr[idx]}" != "" ]; do
-          if [ "$ch_num" == "${ch_prio_arr[idx]}" ] && [ "$ch_use" -le "1" ]; then
+          if [ $_dbg -eq 1 ]; then echo "checkChan: ${ch_prio_arr[idx]} chan:$ch_num usecnt:$ch_use"; fi
+          if [ "$ch_num" == "${ch_prio_arr[idx]}" ] && [ $ch_use -le 1 ]; then
             chanw="$ch_num"
             _ret=0
-#           echo "found idx: $idx ch: $chanw use: $ch_use"
+            if [ $_dbg -eq 1 ]; then echo "found idx: $idx ch: $chanw use: $ch_use"; fi
           fi
           idx=$(($idx+1))
         done
-      done <<< $(cat $fil | sort | uniq -c | sort -n)
+      done <<< $(cat $fil)
     fi
-  else
-    chanw="$3"
-  fi
+  else chanw="$3"; fi
   if [ "$chanw" == "" ]; then chanw="$2"; fi
   if [ "$chanw" == "" ]; then chanw="$ch_dflt"; fi
+  Check_Chan  
+  if [ $_dbg -eq 1 ]; then echo "$_ret channel:$chanw group:$changrp"; fi
   return $_ret
 }
 
@@ -1281,7 +1330,6 @@ function Find_Chan {
 # 5GHz      a/n/ac/ax    up to 37, depends on country
 
 function Mdfy_hostapd {
-# 1:channel
   _ret=1
   if [ "$wap_drv" != "" ]; then
     Mod_Para "hostapd" "driver" "$wap_drv"
@@ -1289,13 +1337,13 @@ function Mdfy_hostapd {
   fi
   
   _hlp=$(echo "$wap_cap" | grep "VHT")
-  if [ "$_hlp" != "" ] && [ $1 -ge 32 ]; then   # 5GHz
+  if [ "$_hlp" != "" ] && [ $chanw -ge 32 ]; then   # 5GHz
     Mod_Para "hostapd" "ieee80211ac" "1"
     _ret=$?
     Mod_Para "hostapd" "require_vht" "1"
     Mod_Para "hostapd" "require_ht"  "1"
     Mod_Para "hostapd" "ieee80211n"  "1"
-    Mod_Para "hostapd" "ieee80211d"  "1"		# activate country code
+    Mod_Para "hostapd" "ieee80211d"  "1"        # activate country code
 #   Mod_Para "hostapd" "ieee80211h"  "0"
   else                                          # 2.4GHz
     Mod_Para "hostapd" "ieee80211ac" "0"
@@ -1311,23 +1359,14 @@ function Mdfy_hostapd {
 }
 
 function Mdfy_HWmode {
-# 1:channel
   _ret=1
-  if [ $1 -le 14 ];  then _hm="g"; else _hm="a"; fi
-  if [ $1 -ge 32 ];  then _att="$1 (can cause problem)"; else _att="$1"; fi
+  if [ $chanw -le 14 ];  then _hm="g"; else _hm="a"; fi
+  if [ $chanw -ge 32 ];  then _att="$chanw (can cause problem)"; else _att="$chanw"; fi
   _msg "    select  hw_mode $_hm  chan $_att"
 
   Mod_Para "hostapd" "hw_mode" "$_hm"
   _ret=$?
   return $_ret
-}
-
-function Check_Chan {
-  isint "$chanw"
-  if [ $? -ne 0 ]; then
-    isint "$ch_dflt"
-    if [ $? -eq 0 ]; then chanw="$ch_dflt"; else chanw="6"; fi
-  fi
 }
   
 function Mdfy_Chan {
@@ -1337,8 +1376,8 @@ function Mdfy_Chan {
   chanw="$2"
   Check_Chan
   Mod_Para     "hostapd" "channel" "$chanw"
-  Mdfy_HWmode  $chanw
-  Mdfy_hostapd $chanw
+  Mdfy_HWmode
+  Mdfy_hostapd
   _ret=$?
   return $_ret
 }
@@ -1899,6 +1938,9 @@ case "$opt1" in
             ;;
     setchan)
             Mdfy_Chan     "given_by_cli" "$opt2" "given_by_cli"
+            ;;
+    findchan)
+            Find_Chan     "$opt2" "$opt3" "dbg"
             ;;
       setup)
             Hotspot_Setup "$opt2" "$opt3"
