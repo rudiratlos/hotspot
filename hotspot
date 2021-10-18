@@ -1,7 +1,7 @@
 #!/bin/bash
 set +e
 
-hotspotver="V0.969"
+hotspotver="V0.970"
 snam="${0##*/}"
 opt1="$1"
 opt2="$2"
@@ -17,12 +17,20 @@ ovpnrefreshbeforestart="no"
 aptaddinstlist="tor openvpn wireguard"
 
 eth_dev="eth0"
+# if 0 defined, automatic discovery disabled
+ch_autofind="1"
+ch_dflt2GHz="6"
+ch_dflt5GHz="32"
+ch_dflt="$ch_dflt2GHz"
 # freq_filter: 2|5 GHz band
 freq_filter="2"
-if [ "$freq_filter" != "5" ]; then freq_filter="2"; fi
-# if defined, automatic discovery disabled
-ch_autofind="1"
-ch_dflt="11"
+if [ "$freq_filter" == "5" ]; then 
+  ch_dflt="$ch_dflt5GHz"
+else 
+  ch_dflt="$ch_dflt2GHz" 
+  freq_filter="2"
+fi
+
 # valid channels and selection prio
 ch_2GHz_ovrlap="2 3 4 5 7 8 9 10 12 13"
 ch_2GHz_022MHz="1 6 11"
@@ -168,6 +176,7 @@ function _msgsuc { _msg "${GREEN}SUC:${NC} $1"; }
 function _msgred { _msg "${RED}$1${NC}"; }
 function _msggrn { _msg "${GREEN}$1${NC}"; }
 function mark    { export $1=`pwd`; }
+function isint   { case ${1#[-+]} in ''|*[!0-9]*) return 1;;esac; }
 
 function checkIP {
   _ret=1
@@ -268,15 +277,14 @@ function Hotspot_Defines {
   if [ "$eth_subn" != "$ap_subn" ]; then
     if [ "$wl1_avail" == "yes" ] || [ "$eth_subn" == "$wl0_subn" ] || [ "$wl0_subn" == "" ]; then hs_try="yes"; fi
   fi
-
-  case "$wl0_drv" in
-    brcmfmac) wl0_drv="nl80211" ;; # rpi4 on board driver
-  esac
   
+# onboard device as default AP device
   wap_dev="$wl0_dev"
   wap_drv="$wl0_drv"
   wap_cap="$wl0_cap"
-  
+  wap_phy="$wl0_phy"
+
+# check, if external device can be AP  
   if [ "$wl1_avail" == "yes" ] && [ "$wl1_phy" != "" ] && [ "$ap_useextdev" == "yes" ]; then
 #   echo "$wl1_dev $wl1_phy $wl1_drv"
     _hlp=$(iw $wl1_phy info | grep "VHT" | xargs)
@@ -286,11 +294,19 @@ function Hotspot_Defines {
     if [ "$_hlp" != "" ]; then
 #     echo "    $wl1_phy    $wl1_dev   $wl1_drv can work in AP mode (highly experimental, may not work)"
       wl1_cap=$(echo "$wl1_cap AP" | xargs)
+# external dev can be AP
       wap_dev="$wl1_dev"
       wap_cap="$wl1_cap"
-#     wap_drv="$wl1_drv"      
+      wap_drv="$wl1_drv" 
+      wap_phy="$wl1_phy"     
     fi
   fi
+  
+  case "$wap_drv" in
+    xxather)  wap_drv="hostap"  ;; # Prism2/2.5/3 Chip, wip how to find out
+    xmadwifi) wap_drv="madwifi" ;; # Atheros (ar521x) Chip, wip how to find out
+    *)        wap_drv="nl80211" ;; # rpi4 on board driver, fits for most other devices
+  esac
 
   acc_info=""
   if [ "$hs_try" == "yes" ]; then
@@ -1015,21 +1031,18 @@ function stop_ap_dev {
   fi
   return $_ret
 }
-
+  
 function inst_ap_dev {
   _ret=1
-  wcap="$3"
-  wdrv="$2"
-  wdev="$1"
-  if [ "$wdev" != "$ap_dev" ] && [ "$wdev" != "" ]; then
-    _msg "    install & check dev $ap_dev drv $wdrv $wcap"
+  if [ "$wap_dev" != "$ap_dev" ] && [ "$wap_dev" != "" ]; then
+    _msg "    install & check dev $ap_dev drv $wap_drv $wap_cap"
     apnet255=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $4 }'`
     if [ "$ap_subn" != "$apnet255" ]; then
-      _msg "    assign  dev $ap_dev $ap_ipanet on $wdev"
-      ip -force link set dev "$wdev" down 
-      ip addr flush dev "$wdev"
+      _msg "    assign  dev $ap_dev $ap_ipanet on $wap_dev"
+      ip -force link set dev "$wap_dev" down 
+      ip addr flush dev "$wap_dev"
 #     sleep 3
-      iw dev $wdev interface add $ap_dev type __ap
+      iw dev $wap_dev interface add $ap_dev type __ap
       stop_ap_dev "$ap_dev"
 #     ip link set $ap_dev address $ap_devmac
       ip a add "$ap_ipanet" brd + dev "$ap_dev"
@@ -1037,7 +1050,7 @@ function inst_ap_dev {
     fi
     apipn=`ip addr show dev "$ap_dev" 2>/dev/null | awk '/inet / { print $2 }'`
     if [ "$apipn" == "$ap_ipanet" ]; then
-      _msg "    install dev $ap_dev on $wdev done"
+      _msg "    install dev $ap_dev on $wap_dev done"
       _ret=0
     else
       _msgerr "  install dev $ap_dev"
@@ -1216,6 +1229,7 @@ function do_syslog {
 function Find_Chan {
 # find best (least used) channel
 # Find_Chan "wlan1" "11" "104" "5"
+# OUT: chanw
   _ret=1
   chanw=""
   chflg=""
@@ -1254,31 +1268,78 @@ function Find_Chan {
   return $_ret
 }
 
-function Mdfy_Chan {
-  _ret=0
-  _msg "    modify  channel strategy: $1 $2 $3"
-  ch="$2"
-  if [ "$ch" == "" ]; then
-    ch="$ch_dflt"
-    _msg "    using   default chan $ch"
-  fi
-  if [ "$ch" -le "14" ]; then hm="g"; else hm="a"; fi
-  if [ "$ch" -ge "32" ]; then att="$ch (can cause problem)"; else att="$ch"; fi
-  _msg "    select  hw_mode $hm  chan $att"
-  Mod_Para "hostapd" "channel" "$ch"
-  Mod_Para "hostapd" "hw_mode" "$hm"
-  return $_ret
-}
+# Tech      FreqBand     MaxSpeed
+# 802.11a   5GHz           54Mbps obsolete
+# 802.11b   2.4GHz         11Mbps obsolete
+# 802.11g   2.4GHz         54Mbps becoming obsolete
+# 802.11n   2.4 or 5GHz   150Mbps
+# 802.11ac  5GHz          867Mbps
+# 802.11ax  2.4 or 5GHz  1201Mbps
+
+# FreqBand  802.11       Channels
+# 2.4GHz    b/g/n/ax     up to 14, depends on country
+# 5GHz      a/n/ac/ax    up to 37, depends on country
 
 function Mdfy_hostapd {
-# 1:wlanX 2:nl80211 3:AP VHT
+# 1:channel
+  _ret=1
   if [ "$wap_drv" != "" ]; then
     Mod_Para "hostapd" "driver" "$wap_drv"
+    _ret=$?
   fi
   
   _hlp=$(echo "$wap_cap" | grep "VHT")
-  if [ "$_hlp" != "" ]; then _hlp="1"; else _hlp="0"; fi
-  Mod_Para "hostapd" "ieee80211ac" "$_hlp"
+  if [ "$_hlp" != "" ] && [ $1 -ge 32 ]; then   # 5GHz
+    Mod_Para "hostapd" "ieee80211ac" "1"
+    _ret=$?
+    Mod_Para "hostapd" "require_vht" "1"
+    Mod_Para "hostapd" "require_ht"  "1"
+    Mod_Para "hostapd" "ieee80211n"  "1"
+    Mod_Para "hostapd" "ieee80211d"  "1"		# activate country code
+#   Mod_Para "hostapd" "ieee80211h"  "0"
+  else                                          # 2.4GHz
+    Mod_Para "hostapd" "ieee80211ac" "0"
+    _ret=$?
+    Mod_Para "hostapd" "require_vht" "0"
+    Mod_Para "hostapd" "require_ht"  "0"
+    Mod_Para "hostapd" "ieee80211n"  "1"
+    Mod_Para "hostapd" "ieee80211d"  "1"        # activate country code
+#   Mod_Para "hostapd" "ieee80211h"  "0"
+  fi
+  
+  return $_ret
+}
+
+function Mdfy_HWmode {
+# 1:channel
+  _ret=1
+  if [ $1 -le 14 ];  then _hm="g"; else _hm="a"; fi
+  if [ $1 -ge 32 ];  then _att="$1 (can cause problem)"; else _att="$1"; fi
+  _msg "    select  hw_mode $_hm  chan $_att"
+
+  Mod_Para "hostapd" "hw_mode" "$_hm"
+  _ret=$?
+  return $_ret
+}
+
+function Check_Chan {
+  isint "$chanw"
+  if [ $? -ne 0 ]; then
+    isint "$ch_dflt"
+    if [ $? -eq 0 ]; then chanw="$ch_dflt"; else chanw="6"; fi
+  fi
+}
+  
+function Mdfy_Chan {
+# 1:msg 2:channel 3:chanh
+  _ret=1
+  _msg "    modify  channel strategy: $1 $2 $3"
+  chanw="$2"
+  Check_Chan
+  Mod_Para     "hostapd" "channel" "$chanw"
+  Mdfy_HWmode  $chanw
+  Mdfy_hostapd $chanw
+  _ret=$?
   return $_ret
 }
 
@@ -1294,38 +1355,48 @@ function Hotspot_Start {
   Check_installed_PKG
   Hotspot_Defines
   ext_ip=`dig txt o-o.myaddr.test.l.google.com @ns1.google.com +short -4 | sed 's/"//g'`
-  _msg "starting    $snam $hotspotver usr:$usr"
-  _msg "    extIP   router  $ext_ip"
-  _msg "    ETHER   $eth_dev    $eth_ip"
-  _msg "    WLANint $wl0_dev   $wl0_phy $wl0_ip $wl0_drv $wl0_cap"
-  _msg "    WLANext $wl1_dev   $wl1_phy $wl1_ip $wl1_drv $wl1_cap"
-  chanh=`cat "$hostapdf" | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
-  if [ "$chanh" != "0" ]; then
-    if [ "$ap_share" != "yes" ] && { [ "$wl1_avail" == "yes" ] || [ "$eth_ip" != "" ]; }; then
-      Find_Chan "$wl0_dev" "$ch_dflt" "$chanh" "$freq_filter"
+  _msg   "starting    $snam $hotspotver usr:$usr"
+  _msg   "    extIP   router  $ext_ip"
+  _msg   "    ETHER   $eth_dev    $eth_ip"
+  _msg   "    WLANint $wl0_dev   $wl0_phy $wl0_ip $wl0_drv $wl0_cap"
+  if [ "$wl1_avail" == "yes" ]; then
+    _msg "    WLANext $wl1_dev   $wl1_phy $wl1_ip $wl1_drv $wl1_cap"
+  else
+    _msg "    WLANext no device connected"
+  fi
+  _msg   "    APdev   $wap_dev   $wap_phy $wap_drv $wap_cap"
+
+
+  if [ "$ch_autofind" -gt "0" ]; then
+
+    chanw="$ch_dflt";
+    Check_Chan
+    chanh=`cat "$hostapdf" | awk '/channel=/ { print $1 }' | sed 's/channel=//g'`
+
+    if [ "$ap_share" != "yes" ] && \
+     { [ "$wl1_avail" == "yes" ] || [ "$eth_ip" != "" ]; }; then
+      Find_Chan "$wap_dev" "$ch_dflt" "$chanh" "$freq_filter"
       _msg "    FndChan suggest channel $chanw"
       msg="select channel for ap mode"
     else
-      chanw=`iwlist $wl0_dev channel | awk '/urrent / { print $5 }' | sed 's/)//g'`
-      msg="select same channel for ap & station mode on $wl0_dev"
+      chanw=`iwlist $wap_dev channel | awk '/urrent / { print $5 }' | sed 's/)//g'`
+      msg="select same channel for ap & station mode on $wap_dev"
       _msg "    UseChan channel $chanw"
     fi
-    if [ "$chanw" != "" ]; then
-      Mdfy_Chan "$msg" "$chanw" "$chanh"
-    fi
+
+    Mdfy_Chan "$msg" "$chanw" "$chanh"
+
   else
-    _msg "    UseAuto channel selection"
+    _msg "    hostapd conf unattended, para ch_autofind=0"
   fi
-  
-  Mdfy_hostapd "$wap_dev" "$wap_drv" "$wap_cap"
-  
+ 
   if [ "$1" == "nowlan" ]; then wlan stop $wap_dev; fi
   _msg "    stop    hostapd"
   systemctl stop hostapd
   _msg "    stop    dnsmasq"
   systemctl stop dnsmasq
   IP4_fwdSet "1"
-  inst_ap_dev "$wap_dev" "$wap_drv" "$wap_cap" 
+  inst_ap_dev
   sleep 1  
   fwd_do   "add" "ap"
   _msg "    start   hostapd restart"
@@ -1684,9 +1755,12 @@ wpa=2
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 
+require_ht=0
 ieee80211n=1
-ieee80211d=1
+ieee80211d=0
+ieee80211h=0
 ieee80211ac=1
+require_vht=0
 
 wmm_enabled=1
 macaddr_acl=0
@@ -1703,7 +1777,6 @@ EOF
   Mod_Para  "hostapd" "wpa_passphrase" "$spot_psk"
   Mod_Para  "hostapd" "country_code" "$spot_cntry2"
   Mod_Para  "crda"    "REGDOMAIN"    "$spot_cntry2"
-# Mod_Para  "self" "autostart" "yes"
   chmod 640 "$fil"
 }
 
